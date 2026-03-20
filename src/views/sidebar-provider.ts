@@ -8,7 +8,8 @@ import { addMcpConnection } from '../mcp/mcp-config.js';
 import type { WebviewMessage } from '../api/types.js';
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
-  private _view?: vscode.WebviewView;
+  public static readonly viewType = 'aiqbee.brainManagerView';
+  private view?: vscode.WebviewView;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -27,7 +28,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     _context: vscode.WebviewViewResolveContext,
     _token: vscode.CancellationToken,
   ): void {
-    this._view = webviewView;
+    this.view = webviewView;
 
     webviewView.webview.options = {
       enableScripts: true,
@@ -148,13 +149,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private postMessage(message: unknown): void {
-    this._view?.webview.postMessage(message);
+    this.view?.webview.postMessage(message);
   }
 
   private getHtml(webview: vscode.Webview): string {
     const distPath = path.join(this.extensionUri.fsPath, 'dist', 'webview');
 
-    // Find the built JS and CSS files
     const jsFile = this.findFile(distPath, 'assets', '.js');
     const cssFile = this.findFile(distPath, 'assets', '.css');
 

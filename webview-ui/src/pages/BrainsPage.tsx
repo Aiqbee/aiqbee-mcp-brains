@@ -122,6 +122,11 @@ export function BrainsPage({ user, onSignOut }: BrainsPageProps) {
       <div className="page-header">
         <span className="page-title">Your Brains</span>
         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+          <button className="btn-icon" onClick={handleCreateBrain} title="New Brain">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M8 2v12M2 8h12" stroke="currentColor" strokeWidth="1.5" fill="none" />
+            </svg>
+          </button>
           <button className="btn-icon" onClick={handleRefresh} title="Refresh">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
               <path d="M13.45 5.45A6 6 0 1 0 14 8h-1.5a4.5 4.5 0 1 1-.87-2.65L10 7h5V2l-1.55 3.45z" />
@@ -149,15 +154,7 @@ export function BrainsPage({ user, onSignOut }: BrainsPageProps) {
           <span>Loading brains...</span>
         </div>
       ) : (
-        <div className="brain-grid">
-          {/* New brain card */}
-          <button className="new-brain-card" onClick={handleCreateBrain}>
-            <svg width="24" height="24" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M8 1v14M1 8h14" stroke="currentColor" strokeWidth="1.5" fill="none" />
-            </svg>
-            <span style={{ fontSize: 12, fontWeight: 600 }}>New Brain</span>
-          </button>
-
+        <div className="brain-list">
           {brains.map((brain) => (
             <BrainCard
               key={brain.id}

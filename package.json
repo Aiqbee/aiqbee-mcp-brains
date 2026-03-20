@@ -38,13 +38,19 @@
     "views": {
       "aiqbee-sidebar": [
         {
-          "type": "webview",
           "id": "aiqbee.brainManagerView",
-          "name": "Brain Manager"
+          "type": "webview",
+          "name": "Brain Manager",
+          "visibility": "visible"
         }
       ]
     },
     "commands": [
+      {
+        "command": "aiqbee.openBrainManager",
+        "title": "Aiqbee: Open Brain Manager",
+        "icon": "$(window)"
+      },
       {
         "command": "aiqbee.signIn",
         "title": "Aiqbee: Sign In"
@@ -67,7 +73,7 @@
       "properties": {
         "aiqbee.environment": {
           "type": "string",
-          "default": "production",
+          "default": "development",
           "enum": [
             "development",
             "production"

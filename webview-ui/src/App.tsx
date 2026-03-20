@@ -15,12 +15,13 @@ interface AppState {
   page: 'login' | 'signup' | 'brains';
   authenticated: boolean;
   user?: UserDto;
+  environment?: string;
   loading: boolean;
   error?: string;
 }
 
 type AppAction =
-  | { type: 'AUTH_STATE'; authenticated: boolean; user?: UserDto }
+  | { type: 'AUTH_STATE'; authenticated: boolean; user?: UserDto; environment?: string }
   | { type: 'SET_PAGE'; page: AppState['page'] }
   | { type: 'SET_LOADING'; loading: boolean }
   | { type: 'SET_ERROR'; error: string }
@@ -33,6 +34,7 @@ function reducer(state: AppState, action: AppAction): AppState {
         ...state,
         authenticated: action.authenticated,
         user: action.user,
+        environment: action.environment ?? state.environment,
         page: action.authenticated ? 'brains' : 'login',
         loading: false,
         error: undefined,
@@ -68,6 +70,7 @@ export default function App() {
             type: 'AUTH_STATE',
             authenticated: message.payload.authenticated,
             user: message.payload.user,
+            environment: message.payload.environment,
           });
           break;
         case 'loading':
@@ -103,6 +106,7 @@ export default function App() {
         <LoginPage
           loading={state.loading}
           error={state.error}
+          environment={state.environment}
           onSignInMicrosoft={() => postMessage({ command: 'signInMicrosoft' })}
           onSignInGoogle={() => postMessage({ command: 'signInGoogle' })}
           onSignInEmail={(email, password) =>

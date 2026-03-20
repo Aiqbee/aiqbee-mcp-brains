@@ -17,16 +17,19 @@ export function activate(context: vscode.ExtensionContext): void {
   // Wire token refresh
   apiClient.setRefreshHandler(() => authService.refreshToken());
 
-  // Sidebar webview provider
+  // Register sidebar webview provider
   const sidebarProvider = new SidebarProvider(
     context.extensionUri,
     authService,
     brainService,
     neuronService,
   );
-
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider('aiqbee.brainManagerView', sidebarProvider),
+    vscode.window.registerWebviewViewProvider(
+      SidebarProvider.viewType,
+      sidebarProvider,
+      { webviewOptions: { retainContextWhenHidden: true } },
+    ),
   );
 
   // Google OAuth URI handler
@@ -34,7 +37,6 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.registerUriHandler({
       handleUri(uri: vscode.Uri): void {
         if (uri.path === '/oauth/callback') {
-          // Extract access token from fragment
           const fragment = uri.fragment;
           const params = new URLSearchParams(fragment);
           const accessToken = params.get('access_token');
@@ -50,6 +52,10 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Commands
   context.subscriptions.push(
+    vscode.commands.registerCommand('aiqbee.openBrainManager', () => {
+      vscode.commands.executeCommand('aiqbee.brainManagerView.focus');
+    }),
+
     vscode.commands.registerCommand('aiqbee.signIn', () => {
       authService.signInWithMicrosoft().catch((err) => {
         vscode.window.showErrorMessage(`Sign in failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -61,7 +67,6 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
 
     vscode.commands.registerCommand('aiqbee.refresh', () => {
-      // Trigger refresh via webview message bridge — the sidebar provider handles it
       vscode.commands.executeCommand('aiqbee.brainManagerView.focus');
     }),
   );

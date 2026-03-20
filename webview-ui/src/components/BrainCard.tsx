@@ -20,46 +20,45 @@ export function BrainCard({
   onAddMcpConnection,
 }: BrainCardProps) {
   return (
-    <div className="brain-card">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 4 }}>
-        <div className="brain-card-name" title={name}>
-          {name}
+    <div className="brain-row">
+      <div className="brain-row-main">
+        <div className="brain-row-header">
+          <span className="brain-row-name" title={name}>{name}</span>
+          {accessLevel && <span className="badge">{accessLevel}</span>}
         </div>
-        {accessLevel && <span className="badge">{accessLevel}</span>}
-      </div>
-
-      {description && (
-        <div className="brain-card-desc" title={description}>
-          {description}
-        </div>
-      )}
-
-      <div className="brain-card-stats">
-        {counts ? (
-          <>
-            <span className="brain-card-stat" title="Neurons">
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="4" /></svg>
-              {counts.neurons}
-            </span>
-            <span className="brain-card-stat" title="Neuron Types">
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="2" /></svg>
-              {counts.neuronTypes}
-            </span>
-            <span className="brain-card-stat" title="Synapses">
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M3 8h10M10 5l3 3-3 3" stroke="currentColor" strokeWidth="1.5" fill="none" /></svg>
-              {counts.synapses}
-            </span>
-          </>
-        ) : (
-          <span style={{ opacity: 0.5 }}>Loading counts...</span>
+        {description && (
+          <div className="brain-row-desc" title={description}>{description}</div>
         )}
+        <div className="brain-row-stats">
+          {counts ? (
+            <>
+              <span className="brain-row-stat" title="Neurons">
+                <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="4" /></svg>
+                {counts.neurons}
+              </span>
+              <span className="brain-row-stat" title="Neuron Types">
+                <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="2" /></svg>
+                {counts.neuronTypes}
+              </span>
+              <span className="brain-row-stat" title="Synapses">
+                <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M3 8h10M10 5l3 3-3 3" stroke="currentColor" strokeWidth="1.5" fill="none" /></svg>
+                {counts.synapses}
+              </span>
+            </>
+          ) : (
+            <span style={{ opacity: 0.5, fontSize: 10 }}>...</span>
+          )}
+        </div>
       </div>
-
-      <div className="brain-card-footer">
-        <button className="btn-secondary" onClick={onAddMcpConnection} style={{ fontSize: 11, padding: '4px 8px' }}>
-          Add MCP Connection
-        </button>
-      </div>
+      <button
+        className="btn-icon"
+        onClick={onAddMcpConnection}
+        title="Add MCP Connection"
+      >
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M8 2v12M2 8h12" stroke="currentColor" strokeWidth="1.5" fill="none" />
+        </svg>
+      </button>
     </div>
   );
 }

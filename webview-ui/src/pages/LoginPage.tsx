@@ -3,6 +3,7 @@ import { useState } from 'react';
 interface LoginPageProps {
   loading: boolean;
   error?: string;
+  environment?: string;
   onSignInMicrosoft: () => void;
   onSignInGoogle: () => void;
   onSignInEmail: (email: string, password: string) => void;
@@ -12,6 +13,7 @@ interface LoginPageProps {
 export function LoginPage({
   loading,
   error,
+  environment,
   onSignInMicrosoft,
   onSignInGoogle,
   onSignInEmail,
@@ -128,6 +130,12 @@ export function LoginPage({
           Create Account
         </button>
       </div>
+
+      {environment && (
+        <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--vscode-descriptionForeground)', marginTop: 4 }}>
+          Environment: <span style={{ fontWeight: 600 }}>{environment}</span>
+        </div>
+      )}
     </div>
   );
 }

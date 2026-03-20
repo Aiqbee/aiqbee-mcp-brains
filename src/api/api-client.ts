@@ -20,8 +20,8 @@ export class ApiClient {
 
   get baseUrl(): string {
     const config = vscode.workspace.getConfiguration('aiqbee');
-    const env = config.get<string>('environment', 'production');
-    return env === 'development' ? 'https://api.aiqbee.dev' : 'https://api.aiqbee.com';
+    const env = config.get<string>('environment', 'development');
+    return env === 'production' ? 'https://api.aiqbee.com' : 'https://api.aiqbee.dev';
   }
 
   setRefreshHandler(handler: () => Promise<boolean>): void {
@@ -50,6 +50,31 @@ export class ApiClient {
 
   async delete<T>(path: string): Promise<T> {
     return this.request<T>(path, { method: 'DELETE' });
+  }
+
+  /** POST with a specific Bearer token — for token exchange (e.g., MS → Aiqbee) */
+  async postWithAuth<T>(path: string, body: unknown, bearerToken: string): Promise<T> {
+    const url = `${this.baseUrl}${path}`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${bearerToken}`,
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(30_000),
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new ApiRequestError(
+        `Request failed: ${response.status} ${response.statusText}`,
+        response.status,
+        text,
+      );
+    }
+
+    return response.json() as Promise<T>;
   }
 
   /** POST without auth header — for login/register endpoints */
