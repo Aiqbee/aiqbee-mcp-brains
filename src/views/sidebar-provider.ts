@@ -78,8 +78,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
         case 'register': {
           this.postMessage({ command: 'loading', payload: { loading: true, command: 'register' } });
-          await this.authService.register(message.payload);
+          const regResult = await this.authService.register(message.payload);
           this.postMessage({ command: 'loading', payload: { loading: false, command: 'register' } });
+          if (regResult.emailVerificationRequired) {
+            this.postMessage({ command: 'emailVerificationRequired', payload: { email: message.payload.email } });
+          }
           break;
         }
 

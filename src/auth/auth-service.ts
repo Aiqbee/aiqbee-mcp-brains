@@ -228,9 +228,19 @@ export class AuthService {
     await this.handleAuthResponse(response, 'email');
   }
 
-  async register(dto: EmailRegisterDto): Promise<void> {
+  async register(dto: EmailRegisterDto): Promise<{ emailVerificationRequired: boolean }> {
     const response = await this.apiClient.postPublic<AuthResponseDto>('/api/auth/email/register', dto);
+
+    // After email registration the backend requires email verification
+    // before the user can sign in. The response may not contain tokens.
+    if (!response.accessToken) {
+      // Registration succeeded but email verification is needed
+      return { emailVerificationRequired: true };
+    }
+
+    // If the backend does return tokens (unlikely for email reg), log in
     await this.handleAuthResponse(response, 'email');
+    return { emailVerificationRequired: false };
   }
 
   async signOut(): Promise<void> {

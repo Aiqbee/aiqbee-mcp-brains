@@ -12,11 +12,12 @@ interface EmailRegisterDto {
 interface SignUpPageProps {
   loading: boolean;
   error?: string;
+  verificationEmail?: string;
   onRegister: (data: EmailRegisterDto) => void;
   onBackToLogin: () => void;
 }
 
-export function SignUpPage({ loading, error, onRegister, onBackToLogin }: SignUpPageProps) {
+export function SignUpPage({ loading, error, verificationEmail, onRegister, onBackToLogin }: SignUpPageProps) {
   const [form, setForm] = useState({
     email: '',
     password: '',
@@ -46,6 +47,11 @@ export function SignUpPage({ loading, error, onRegister, onBackToLogin }: SignUp
       return;
     }
 
+    if (!/[a-zA-Z]/.test(form.password) || !/[0-9]/.test(form.password)) {
+      setValidationError('Password must contain at least one letter and one number');
+      return;
+    }
+
     onRegister({
       email: form.email,
       password: form.password,
@@ -55,6 +61,29 @@ export function SignUpPage({ loading, error, onRegister, onBackToLogin }: SignUp
       jobTitle: form.jobTitle || undefined,
     });
   };
+
+  // Show verification success screen
+  if (verificationEmail) {
+    return (
+      <div className="page">
+        <div className="welcome">
+          <svg width="40" height="40" viewBox="0 0 16 16" fill="var(--vscode-charts-green, #4EC9B0)">
+            <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm3.354 5.354l-4 4a.5.5 0 0 1-.708 0l-2-2a.5.5 0 1 1 .708-.708L7 9.293l3.646-3.647a.5.5 0 0 1 .708.708z" />
+          </svg>
+          <div className="welcome-title">Check Your Email</div>
+          <div className="welcome-desc">
+            We've sent a verification link to <strong>{verificationEmail}</strong>.
+            Please click the link in the email to activate your account, then return here to sign in.
+          </div>
+          <div className="welcome-actions">
+            <button type="button" className="btn-primary" onClick={onBackToLogin}>
+              Back to Sign In
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const isValid =
     form.email &&
@@ -146,7 +175,7 @@ export function SignUpPage({ loading, error, onRegister, onBackToLogin }: SignUp
           <input
             id="signupPassword"
             type="password"
-            placeholder="Min. 8 characters"
+            placeholder="Min. 8 chars, letters and numbers"
             value={form.password}
             onChange={(e) => updateField('password', e.target.value)}
             required
