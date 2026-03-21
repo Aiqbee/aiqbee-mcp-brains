@@ -179,7 +179,6 @@ export function BrainsPage({ user, onSignOut }: BrainsPageProps) {
               name={brain.name}
               description={brain.description}
               accessLevel={accessLevelLabel(brain.accessLevel)}
-              counts={counts[brain.id]}
               onAddMcpConnection={() => handleAddMcpConnection(brain.id, brain.name)}
               onOpenGraph={() => handleOpenGraph(brain.id, brain.name, brain.canWrite)}
             />
