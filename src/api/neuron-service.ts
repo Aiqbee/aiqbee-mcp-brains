@@ -25,9 +25,9 @@ export class NeuronService {
     ]);
 
     return {
-      neurons: neurons.totalCount,
-      neuronTypes: neuronTypes.totalCount,
-      synapses: synapses.totalCount,
+      neurons: neurons?.totalCount ?? 0,
+      neuronTypes: neuronTypes?.totalCount ?? 0,
+      synapses: synapses?.totalCount ?? 0,
     };
   }
 
@@ -39,6 +39,7 @@ export class NeuronService {
       const resp = await this.api.get<PaginatedResponse<NeuronDto>>(
         `/api/neurons?brainId=${brainId}&pageSize=${pageSize}&pageNumber=${page}`
       );
+      if (!resp?.items) break;
       all.push(...resp.items);
       if (page >= resp.totalPages) break;
       page++;
@@ -50,7 +51,7 @@ export class NeuronService {
     const resp = await this.api.get<PaginatedResponse<NeuronTypeDto>>(
       `/api/neuron-types?brainId=${brainId}&pageSize=255`
     );
-    return resp.items;
+    return resp?.items ?? [];
   }
 
   async listSynapses(brainId: string): Promise<SynapseDto[]> {
@@ -61,6 +62,7 @@ export class NeuronService {
       const resp = await this.api.get<PaginatedResponse<SynapseDto>>(
         `/api/synapses?brainId=${brainId}&pageSize=${pageSize}&pageNumber=${page}`
       );
+      if (!resp?.items) break;
       all.push(...resp.items);
       if (page >= resp.totalPages) break;
       page++;

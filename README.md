@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="media/aiqbee-logo.png" alt="Aiqbee" height="48" />
+  <img src="media/aiqbee-logo-reversed.png" alt="Aiqbee" height="48" />
 </p>
 
 <h1 align="center">Aiqbee MCP Brains</h1>
@@ -128,12 +128,6 @@ Press `F5` in VS Code to launch the Extension Development Host.
 | `Aiqbee: Sign Out`            | Sign out                        |
 | `Aiqbee: Refresh Brains`      | Refresh the brain list          |
 | `Aiqbee: Add MCP Connection`  | Add an MCP connection for a brain |
-
-## Configuration
-
-| Setting              | Default       | Description                                      |
-| -------------------- | ------------- | ------------------------------------------------ |
-| `aiqbee.environment` | `development` | API environment (`development` or `production`)  |
 
 ---
 

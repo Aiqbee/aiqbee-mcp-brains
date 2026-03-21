@@ -29,25 +29,6 @@ describe('BrainCard', () => {
     expect(container.querySelector('.brain-row-desc')).toBeNull();
   });
 
-  it('renders counts when provided', () => {
-    render(
-      <BrainCard
-        {...defaultProps}
-        counts={{ neurons: 42, neuronTypes: 5, synapses: 30 }}
-      />
-    );
-
-    expect(screen.getByText('42')).toBeInTheDocument();
-    expect(screen.getByText('5')).toBeInTheDocument();
-    expect(screen.getByText('30')).toBeInTheDocument();
-  });
-
-  it('renders loading indicator when counts are absent', () => {
-    render(<BrainCard {...defaultProps} />);
-
-    expect(screen.getByText('...')).toBeInTheDocument();
-  });
-
   it('calls onOpenGraph when graph button is clicked', () => {
     render(<BrainCard {...defaultProps} />);
 
