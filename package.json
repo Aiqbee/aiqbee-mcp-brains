@@ -1,30 +1,45 @@
 {
-  "name": "aiqbee-brain-manager",
-  "displayName": "Aiqbee Brain Manager",
-  "description": "Access and manage Aiqbee Brains from within VS Code. Browse brains, view neurons, and configure MCP connections for AI coding assistants.",
+  "name": "aiqbee-mcp-brains",
+  "displayName": "Aiqbee MCP Brains",
+  "description": "Browse, visualise and manage Aiqbee knowledge brains. One-click MCP connections for Claude Code, Cursor, Windsurf and other AI coding assistants.",
   "version": "0.1.0",
   "publisher": "aiqbee",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/aiqbee/platform-vscode-extension"
+    "url": "https://github.com/aiqbee/aiqbee-mcp-brains.git"
+  },
+  "homepage": "https://github.com/aiqbee/aiqbee-mcp-brains#readme",
+  "bugs": {
+    "url": "https://github.com/aiqbee/aiqbee-mcp-brains/issues"
   },
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
-    "Other"
+    "Other",
+    "Machine Learning"
   ],
   "keywords": [
     "aiqbee",
     "brain",
     "mcp",
     "knowledge",
-    "ai"
+    "ai",
+    "model-context-protocol",
+    "claude",
+    "cursor",
+    "windsurf",
+    "knowledge-base",
+    "neurons"
   ],
   "activationEvents": [],
   "main": "./dist/extension.js",
   "icon": "media/aiqbee-icon.png",
+  "galleryBanner": {
+    "color": "#1e1e1e",
+    "theme": "dark"
+  },
   "contributes": {
     "viewsContainers": {
       "activitybar": [
@@ -69,7 +84,7 @@
       }
     ],
     "configuration": {
-      "title": "Aiqbee Brain Manager",
+      "title": "Aiqbee MCP Brains",
       "properties": {
         "aiqbee.environment": {
           "type": "string",

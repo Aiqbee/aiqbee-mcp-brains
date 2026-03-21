@@ -3,3 +3,10 @@ dist/
 *.vsix
 .vscode-test/
 webview-ui/node_modules/
+
+# Claude Code
+.claude/
+
+# OS files
+.DS_Store
+Thumbs.db
