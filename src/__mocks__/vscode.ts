@@ -49,14 +49,14 @@ export const EventEmitter = class {
 export enum SecretStorageKeys {}
 
 export class SecretStorage {
-  private store = new Map<string, string>();
+  private data = new Map<string, string>();
   async get(key: string) {
-    return this.store.get(key);
+    return this.data.get(key);
   }
-  async store_(key: string, value: string) {
-    this.store.set(key, value);
+  async store(key: string, value: string) {
+    this.data.set(key, value);
   }
   async delete(key: string) {
-    this.store.delete(key);
+    this.data.delete(key);
   }
 }

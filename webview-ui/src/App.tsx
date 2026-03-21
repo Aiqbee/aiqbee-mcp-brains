@@ -69,6 +69,9 @@ export default function App() {
   useMessageListener(
     useCallback((event: MessageEvent) => {
       const message = event.data;
+      if (!message || typeof message.command !== 'string') {
+        return;
+      }
       switch (message.command) {
         case 'authStateChanged':
           dispatch({

@@ -86,9 +86,17 @@ export async function addMcpConnection(brainId: string, brainName: string): Prom
     let config: McpConfig = {};
     try {
       const existing = await fs.readFile(configPath, 'utf-8');
-      config = JSON.parse(existing) as McpConfig;
-    } catch {
-      // File doesn't exist or invalid JSON — start fresh
+      const parsed = JSON.parse(existing);
+      if (typeof parsed === 'object' && parsed !== null) {
+        config = parsed as McpConfig;
+      } else {
+        vscode.window.showWarningMessage(`${target.label} contained invalid structure — creating fresh config.`);
+      }
+    } catch (err: unknown) {
+      if (err instanceof SyntaxError) {
+        vscode.window.showWarningMessage(`${target.label} contained malformed JSON — creating fresh config.`);
+      }
+      // ENOENT (file doesn't exist) is fine — start fresh
     }
 
     const key = target.serverKey;

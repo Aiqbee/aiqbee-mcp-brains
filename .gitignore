@@ -7,6 +7,9 @@ webview-ui/node_modules/
 # Claude Code
 .claude/
 
+# MCP config (machine-specific brain connections)
+.mcp.json
+
 # OS files
 .DS_Store
 Thumbs.db

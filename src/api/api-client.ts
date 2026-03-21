@@ -137,7 +137,7 @@ export class ApiClient {
       return response.json() as Promise<T>;
     }
 
-    return undefined as T;
+    return undefined as unknown as T;
   }
 
   private async deduplicatedRefresh(): Promise<boolean> {
