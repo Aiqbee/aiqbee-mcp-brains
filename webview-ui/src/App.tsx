@@ -56,28 +56,6 @@ function reducer(state: AppState, action: AppAction): AppState {
 
 type Tab = 'brains' | 'help' | 'prompts';
 
-// Logo URIs injected by sidebar-provider.ts into window globals
-const logoUrl = (window as any).__AIQBEE_LOGO_REVERSED__ || (window as any).__AIQBEE_LOGO__ || '';
-
-function LogoHeader({ postMessage }: { postMessage: (msg: any) => void }) {
-  return (
-    <div className="logo-header">
-      <button
-        type="button"
-        className="logo-btn"
-        onClick={() => postMessage({ command: 'openExternal', payload: { url: 'https://www.aiqbee.com' } })}
-        title="Open aiqbee.com"
-      >
-        {logoUrl ? (
-          <img src={logoUrl} alt="Aiqbee" className="logo-img" />
-        ) : (
-          <span className="logo-text">aiqbee</span>
-        )}
-      </button>
-    </div>
-  );
-}
-
 export default function App() {
   const { postMessage } = useVsCode();
   const [state, dispatch] = useReducer(reducer, {
@@ -121,7 +99,6 @@ export default function App() {
   if (state.loading && !state.authenticated && state.page === 'login') {
     return (
       <>
-        <LogoHeader postMessage={postMessage} />
         <div className="loading-container">
           <div className="spinner" />
           <span>Loading...</span>
@@ -134,7 +111,6 @@ export default function App() {
   if (state.page === 'login') {
     return (
       <>
-      <LogoHeader postMessage={postMessage} />
       <LoginPage
         loading={state.loading}
         error={state.error}
@@ -153,7 +129,6 @@ export default function App() {
   if (state.page === 'signup') {
     return (
       <>
-      <LogoHeader postMessage={postMessage} />
       <SignUpPage
         loading={state.loading}
         error={state.error}
@@ -167,7 +142,6 @@ export default function App() {
   // Authenticated: show tab bar + content
   return (
     <div className="app-shell">
-      <LogoHeader postMessage={postMessage} />
       <div className="tab-bar">
         <button
           type="button"

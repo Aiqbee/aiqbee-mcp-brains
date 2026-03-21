@@ -108,13 +108,18 @@
     "watch": "node esbuild.js --watch",
     "package:dev": "npm run compile:dev && vsce package",
     "package:prod": "npm run compile:prod && vsce package",
-    "lint": "eslint src --ext ts"
+    "lint": "eslint src --ext ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:all": "vitest run && cd webview-ui && npx vitest run"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
+    "@vitest/coverage-v8": "^4.1.0",
     "@vscode/vsce": "^3.0.0",
     "esbuild": "^0.24.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.0"
   }
 }

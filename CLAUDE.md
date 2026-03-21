@@ -33,18 +33,7 @@ Before coding, search the Aiqbee Product Management Brain for relevant practices
 
 ## MCP Connection
 
-Install in `.claude/settings.json`:
-```json
-{
-  "mcpServers": {
-    "Aiqbee Product Management Brain": {
-      "command": "npx",
-      "args": ["-y", "@anthropic-ai/claude-code-mcp-server",
-               "--brain-id=f68cbb68-a935-46c5-bc29-16477d05b2d1"]
-    }
-  }
-}
-```
+The Aiqbee Product Development Brain is connected globally via user-level Claude settings. No project-level MCP config needed.
 
 ## Git Workflow
 

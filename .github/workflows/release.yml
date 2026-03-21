@@ -1,0 +1,47 @@
+name: Release to VS Code Marketplace
+
+on:
+  push:
+    branches: [master]
+    tags:
+      - 'v*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # Only run on tag pushes to prevent duplicate publishes
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci && cd webview-ui && npm ci
+
+      - name: Run tests
+        run: npm run test:all
+
+      - name: Build for production
+        run: |
+          node esbuild.js --mode=euprod --production
+          cd webview-ui && npm run build -- --mode euprod
+
+      - name: Publish to VS Code Marketplace
+        run: npx @vscode/vsce publish --no-dependencies
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
+      - name: Package VSIX for GitHub Release
+        run: npx @vscode/vsce package --no-dependencies
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "*.vsix"
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

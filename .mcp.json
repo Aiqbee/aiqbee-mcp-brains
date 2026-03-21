@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "Aiqbee Product Development Brain": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@anthropic-ai/claude-code-mcp-server",
+        "--brain-id=f68cbb68-a935-46c5-bc29-16477d05b2d1"
+      ]
+    }
+  }
+}

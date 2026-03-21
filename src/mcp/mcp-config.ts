@@ -4,12 +4,23 @@ import * as fs from 'fs/promises';
 
 interface McpConfig {
   mcpServers?: Record<string, McpServerEntry>;
+  servers?: Record<string, McpServerEntry>;
   [key: string]: unknown;
 }
 
 interface McpServerEntry {
   command: string;
   args: string[];
+  [key: string]: unknown;
+}
+
+interface ConfigTarget {
+  label: string;
+  description: string;
+  detail: string;
+  configPath: string;
+  /** VS Code Copilot uses "servers" key instead of "mcpServers" */
+  serverKey: 'mcpServers' | 'servers';
 }
 
 export async function addMcpConnection(brainId: string, brainName: string): Promise<void> {
@@ -23,43 +34,55 @@ export async function addMcpConnection(brainId: string, brainName: string): Prom
 
   const workspaceRoot = workspaceFolders[0].uri.fsPath;
 
-  // Let user choose the config target
-  const target = await vscode.window.showQuickPick(
-    [
-      {
-        label: '.claude/settings.json',
-        description: 'Claude Code',
-        detail: 'Add MCP config to the Claude Code project settings',
-        configPath: path.join(workspaceRoot, '.claude', 'settings.json'),
-      },
-      {
-        label: '.mcp.json',
-        description: 'Generic MCP (Cursor, etc.)',
-        detail: 'Add MCP config to a generic .mcp.json file at the workspace root',
-        configPath: path.join(workspaceRoot, '.mcp.json'),
-      },
-    ],
+  const targets: ConfigTarget[] = [
     {
-      placeHolder: 'Where should the MCP connection be added?',
-    }
-  );
+      label: '.mcp.json',
+      description: 'Claude Code (recommended)',
+      detail: 'Project-level MCP config — committed to repo, works with Claude Code',
+      configPath: path.join(workspaceRoot, '.mcp.json'),
+      serverKey: 'mcpServers',
+    },
+    {
+      label: '.cursor/mcp.json',
+      description: 'Cursor',
+      detail: 'Project-level MCP config for Cursor AI',
+      configPath: path.join(workspaceRoot, '.cursor', 'mcp.json'),
+      serverKey: 'mcpServers',
+    },
+    {
+      label: '.vscode/mcp.json',
+      description: 'VS Code / GitHub Copilot',
+      detail: 'Project-level MCP config for VS Code with Copilot',
+      configPath: path.join(workspaceRoot, '.vscode', 'mcp.json'),
+      serverKey: 'servers',
+    },
+    {
+      label: '.roo/mcp.json',
+      description: 'Roo Code',
+      detail: 'Project-level MCP config for Roo Code',
+      configPath: path.join(workspaceRoot, '.roo', 'mcp.json'),
+      serverKey: 'mcpServers',
+    },
+  ];
+
+  const target = await vscode.window.showQuickPick(targets, {
+    placeHolder: 'Where should the MCP connection be added?',
+  });
 
   if (!target) {
-    return; // User cancelled
+    return;
   }
 
   const configPath = target.configPath;
-  const serverKey = `Aiqbee Brain: ${brainName}`;
+  const entryName = `Aiqbee Brain: ${brainName}`;
   const serverEntry: McpServerEntry = {
     command: 'npx',
     args: ['-y', '@anthropic-ai/claude-code-mcp-server', `--brain-id=${brainId}`],
   };
 
   try {
-    // Ensure parent directory exists
     await fs.mkdir(path.dirname(configPath), { recursive: true });
 
-    // Read existing config or start fresh
     let config: McpConfig = {};
     try {
       const existing = await fs.readFile(configPath, 'utf-8');
@@ -68,13 +91,12 @@ export async function addMcpConnection(brainId: string, brainName: string): Prom
       // File doesn't exist or invalid JSON — start fresh
     }
 
-    // Add/update the MCP server entry
-    if (!config.mcpServers) {
-      config.mcpServers = {};
+    const key = target.serverKey;
+    if (!config[key]) {
+      (config as any)[key] = {};
     }
-    config.mcpServers[serverKey] = serverEntry;
+    (config[key] as Record<string, McpServerEntry>)[entryName] = serverEntry;
 
-    // Write back
     await fs.writeFile(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
 
     vscode.window.showInformationMessage(

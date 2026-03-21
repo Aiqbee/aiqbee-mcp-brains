@@ -19,9 +19,8 @@ export class ApiClient {
   constructor(private readonly tokenStorage: TokenStorage) {}
 
   get baseUrl(): string {
-    const config = vscode.workspace.getConfiguration('aiqbee');
-    const env = config.get<string>('environment', 'development');
-    return env === 'production' ? 'https://api.aiqbee.com' : 'https://api.aiqbee.dev';
+    // Injected at build time by esbuild from .env.eudev / .env.euprod
+    return process.env.VITE_API_URL || 'https://api.aiqbee.com';
   }
 
   setRefreshHandler(handler: () => Promise<boolean>): void {

@@ -13,22 +13,12 @@ interface EnvConfig {
 }
 
 function getEnvConfig(): EnvConfig {
-  const config = vscode.workspace.getConfiguration('aiqbee');
-  const env = config.get<string>('environment', 'production');
-
-  if (env === 'development') {
-    return {
-      apiUrl: 'https://api.aiqbee.dev',
-      msalClientId: '11333331-ee60-49d8-9b63-a7a04aac8622',
-      entraScopes: 'api://3f91729c-d752-498b-8b12-c2552c31d10e/user.access',
-      googleClientId: '889180962551-mlb6f07k2au1l8he466u723v5lbqc442.apps.googleusercontent.com',
-    };
-  }
+  // Values injected at build time by esbuild from .env.eudev / .env.euprod
   return {
-    apiUrl: 'https://api.aiqbee.com',
-    msalClientId: 'c758bf30-ccbe-4b0d-80f6-c413a87b9cf2',
-    entraScopes: 'api://9935edc3-c4c8-4cff-b3d9-6089096a9579/user.access',
-    googleClientId: '889180962551-8ap19r95rthh7tj0khv4e5u3j44q561c.apps.googleusercontent.com',
+    apiUrl: process.env.VITE_API_URL || 'https://api.aiqbee.com',
+    msalClientId: process.env.VITE_MSAL_CLIENT_ID || '',
+    entraScopes: process.env.VITE_ENTRA_SCOPES || '',
+    googleClientId: process.env.VITE_GOOGLE_CLIENT_ID || '',
   };
 }
 
