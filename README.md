@@ -5,13 +5,19 @@
 <h1 align="center">Aiqbee MCP Brains</h1>
 
 <p align="center">
+  <a href="https://marketplace.visualstudio.com/items?itemName=aiqbee.aiqbee-mcp-brains"><img src="https://img.shields.io/visual-studio-marketplace/v/aiqbee.aiqbee-mcp-brains?label=VS%20Code%20Marketplace&color=A972B8" alt="VS Code Marketplace Version" /></a>
+  <a href="https://marketplace.visualstudio.com/items?itemName=aiqbee.aiqbee-mcp-brains"><img src="https://img.shields.io/visual-studio-marketplace/i/aiqbee.aiqbee-mcp-brains?color=FF6B3D" alt="Installs" /></a>
+  <a href="https://github.com/aiqbee/aiqbee-mcp-brains/blob/master/LICENSE"><img src="https://img.shields.io/github/license/aiqbee/aiqbee-mcp-brains" alt="License" /></a>
+</p>
+
+<p align="center">
   <strong>Connect your AI coding assistant to a shared knowledge brain — instantly.</strong><br/>
   One-click MCP connections for Claude Code, Cursor, Windsurf, and any MCP-compatible tool.<br/><br/>
   <em>Public Beta — we'd love your feedback! <a href="https://github.com/aiqbee/aiqbee-mcp-brains/issues">Report issues</a></em>
 </p>
 
 <p align="center">
-  <a href="https://www.aiqbee.com">Website</a> · <a href="https://app.aiqbee.com">Web App</a> · <a href="https://github.com/aiqbee/aiqbee-mcp-brains/issues">Issues</a>
+  <a href="https://marketplace.visualstudio.com/items?itemName=aiqbee.aiqbee-mcp-brains">Install from Marketplace</a> · <a href="https://www.aiqbee.com">Website</a> · <a href="https://app.aiqbee.com">Web App</a> · <a href="https://github.com/aiqbee/aiqbee-mcp-brains/issues">Issues</a>
 </p>
 
 ---
@@ -84,7 +90,7 @@ This collapses the feedback loop from days (write spec → implement → documen
 
 ### From VS Code Marketplace
 
-Search for **"Aiqbee MCP Brains"** in the Extensions view (`Ctrl+Shift+X`) and click Install.
+**[Install Aiqbee MCP Brains](https://marketplace.visualstudio.com/items?itemName=aiqbee.aiqbee-mcp-brains)** — or search for **"Aiqbee MCP Brains"** in the Extensions view (`Ctrl+Shift+X`).
 
 ### From Source
 
