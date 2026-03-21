@@ -20,6 +20,7 @@ interface AppState {
   environment?: string;
   loading: boolean;
   error?: string;
+  verificationEmail?: string;
 }
 
 type AppAction =
@@ -27,7 +28,8 @@ type AppAction =
   | { type: 'SET_PAGE'; page: AppState['page'] }
   | { type: 'SET_LOADING'; loading: boolean }
   | { type: 'SET_ERROR'; error: string }
-  | { type: 'CLEAR_ERROR' };
+  | { type: 'CLEAR_ERROR' }
+  | { type: 'EMAIL_VERIFICATION_REQUIRED'; email: string };
 
 function reducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
@@ -42,13 +44,15 @@ function reducer(state: AppState, action: AppAction): AppState {
         error: undefined,
       };
     case 'SET_PAGE':
-      return { ...state, page: action.page, error: undefined };
+      return { ...state, page: action.page, error: undefined, verificationEmail: undefined };
     case 'SET_LOADING':
       return { ...state, loading: action.loading };
     case 'SET_ERROR':
       return { ...state, error: action.error, loading: false };
     case 'CLEAR_ERROR':
       return { ...state, error: undefined };
+    case 'EMAIL_VERIFICATION_REQUIRED':
+      return { ...state, verificationEmail: action.email, loading: false };
     default:
       return state;
   }
@@ -87,6 +91,9 @@ export default function App() {
         case 'error':
           dispatch({ type: 'SET_ERROR', error: message.payload.message });
           break;
+        case 'emailVerificationRequired':
+          dispatch({ type: 'EMAIL_VERIFICATION_REQUIRED', email: message.payload.email });
+          break;
       }
     }, []),
   );
@@ -97,7 +104,6 @@ export default function App() {
   }, [postMessage]);
 
   const goToSignUp = useCallback(() => dispatch({ type: 'SET_PAGE', page: 'signup' }), []);
-  const goToLogin = useCallback(() => dispatch({ type: 'SET_PAGE', page: 'login' }), []);
 
   if (state.loading && !state.authenticated && state.page === 'login') {
     return (
@@ -135,8 +141,12 @@ export default function App() {
       <SignUpPage
         loading={state.loading}
         error={state.error}
+        verificationEmail={state.verificationEmail}
         onRegister={(data) => postMessage({ command: 'register', payload: data })}
-        onBackToLogin={goToLogin}
+        onBackToLogin={() => {
+          dispatch({ type: 'SET_PAGE', page: 'login' });
+          dispatch({ type: 'CLEAR_ERROR' });
+        }}
       />
       </>
     );
