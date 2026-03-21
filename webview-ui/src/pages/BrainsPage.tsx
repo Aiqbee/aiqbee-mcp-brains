@@ -14,12 +14,6 @@ interface BrainWithAccessDto {
   canManageAccess: boolean;
 }
 
-interface BrainCounts {
-  neurons: number;
-  neuronTypes: number;
-  synapses: number;
-}
-
 interface BrainTemplateDto {
   id: string;
   name: string;
@@ -43,7 +37,6 @@ interface BrainsPageProps {
 export function BrainsPage({ user, onSignOut }: BrainsPageProps) {
   const { postMessage } = useVsCode();
   const [brains, setBrains] = useState<BrainWithAccessDto[]>([]);
-  const [counts, setCounts] = useState<Record<string, BrainCounts>>({});
   const [templates, setTemplates] = useState<BrainTemplateDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -67,12 +60,6 @@ export function BrainsPage({ user, onSignOut }: BrainsPageProps) {
               setFirstBrainPrompt(true);
             }
           }
-          break;
-        case 'brainCounts':
-          setCounts((prev) => ({
-            ...prev,
-            [message.payload.brainId]: message.payload.counts,
-          }));
           break;
         case 'brainCreated':
           setShowCreateDialog(false);
@@ -179,7 +166,6 @@ export function BrainsPage({ user, onSignOut }: BrainsPageProps) {
               name={brain.name}
               description={brain.description}
               accessLevel={accessLevelLabel(brain.accessLevel)}
-              counts={counts[brain.id]}
               onAddMcpConnection={() => handleAddMcpConnection(brain.id, brain.name)}
               onOpenGraph={() => handleOpenGraph(brain.id, brain.name, brain.canWrite)}
             />
