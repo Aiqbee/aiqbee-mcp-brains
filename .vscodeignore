@@ -1,0 +1,32 @@
+.vscode/**
+.vscode-test/**
+.github/**
+.claude/**
+src/**
+webview-ui/src/**
+webview-ui/node_modules/**
+webview-ui/package.json
+webview-ui/package-lock.json
+webview-ui/tsconfig.json
+webview-ui/vite.config.ts
+webview-ui/index.html
+node_modules/**
+tasks/**
+esbuild.js
+tsconfig.json
+**/*.map
+**/*.ts
+!dist/**
+.env.*
+.gitignore
+.mcp.json
+
+# Project docs (not needed in VSIX)
+CLAUDE.md
+CONTRIBUTING.md
+CLA.md
+CHANGELOG.md
+
+# OS files
+.DS_Store
+Thumbs.db

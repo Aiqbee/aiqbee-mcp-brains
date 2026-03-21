@@ -1,0 +1,125 @@
+{
+  "name": "aiqbee-mcp-brains",
+  "displayName": "Aiqbee MCP Brains",
+  "description": "Browse, visualise and manage Aiqbee knowledge brains. One-click MCP connections for Claude Code, Cursor, Windsurf and other AI coding assistants.",
+  "version": "0.1.0-beta.1",
+  "publisher": "aiqbee",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aiqbee/aiqbee-mcp-brains.git"
+  },
+  "homepage": "https://github.com/aiqbee/aiqbee-mcp-brains#readme",
+  "bugs": {
+    "url": "https://github.com/aiqbee/aiqbee-mcp-brains/issues"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Machine Learning"
+  ],
+  "keywords": [
+    "aiqbee",
+    "brain",
+    "mcp",
+    "knowledge",
+    "ai",
+    "model-context-protocol",
+    "claude",
+    "cursor",
+    "windsurf",
+    "knowledge-base",
+    "neurons"
+  ],
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "icon": "media/aiqbee-icon.png",
+  "galleryBanner": {
+    "color": "#1e1e1e",
+    "theme": "dark"
+  },
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "aiqbee-sidebar",
+          "title": "Aiqbee",
+          "icon": "media/aiqbee-sidebar.svg"
+        }
+      ]
+    },
+    "views": {
+      "aiqbee-sidebar": [
+        {
+          "id": "aiqbee.brainManagerView",
+          "type": "webview",
+          "name": "Brain Manager",
+          "visibility": "visible"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "aiqbee.openBrainManager",
+        "title": "Aiqbee: Open Brain Manager",
+        "icon": "$(window)"
+      },
+      {
+        "command": "aiqbee.signIn",
+        "title": "Aiqbee: Sign In"
+      },
+      {
+        "command": "aiqbee.signOut",
+        "title": "Aiqbee: Sign Out"
+      },
+      {
+        "command": "aiqbee.refresh",
+        "title": "Aiqbee: Refresh Brains"
+      },
+      {
+        "command": "aiqbee.addMcpConnection",
+        "title": "Aiqbee: Add MCP Connection"
+      }
+    ],
+    "configuration": {
+      "title": "Aiqbee MCP Brains",
+      "properties": {
+        "aiqbee.environment": {
+          "type": "string",
+          "default": "development",
+          "enum": [
+            "development",
+            "production"
+          ],
+          "description": "API environment to connect to."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile:prod",
+    "compile": "npm run compile:extension && npm run compile:webview",
+    "compile:extension": "node esbuild.js",
+    "compile:webview": "cd webview-ui && npm run build",
+    "compile:dev": "node esbuild.js --mode=eudev && cd webview-ui && npm run build -- --mode eudev",
+    "compile:prod": "node esbuild.js --mode=euprod && cd webview-ui && npm run build -- --mode euprod",
+    "watch": "node esbuild.js --watch",
+    "package:dev": "npm run compile:dev && vsce package",
+    "package:prod": "npm run compile:prod && vsce package",
+    "lint": "eslint src --ext ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:all": "vitest run && cd webview-ui && npx vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@vitest/coverage-v8": "^4.1.0",
+    "@vscode/vsce": "^3.0.0",
+    "esbuild": "^0.27.4",
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.0"
+  }
+}
