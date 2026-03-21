@@ -108,6 +108,13 @@ export function BrainsPage({ user, onSignOut }: BrainsPageProps) {
     [postMessage],
   );
 
+  const handleOpenGraph = useCallback(
+    (brainId: string, brainName: string, canWrite: boolean) => {
+      postMessage({ command: 'openBrainGraph', payload: { brainId, brainName, canWrite } });
+    },
+    [postMessage],
+  );
+
   const accessLevelLabel = (level: number): string => {
     switch (level) {
       case 0: return 'Read';
@@ -163,6 +170,7 @@ export function BrainsPage({ user, onSignOut }: BrainsPageProps) {
               accessLevel={accessLevelLabel(brain.accessLevel)}
               counts={counts[brain.id]}
               onAddMcpConnection={() => handleAddMcpConnection(brain.id, brain.name)}
+              onOpenGraph={() => handleOpenGraph(brain.id, brain.name, brain.canWrite)}
             />
           ))}
         </div>

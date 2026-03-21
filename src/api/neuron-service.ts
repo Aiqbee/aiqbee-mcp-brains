@@ -1,5 +1,12 @@
 import { ApiClient } from './api-client.js';
-import type { BrainCounts, PaginatedResponse } from './types.js';
+import type {
+  BrainCounts,
+  NeuronDto,
+  NeuronTypeDto,
+  SynapseDto,
+  PaginatedResponse,
+  BrainGraphData,
+} from './types.js';
 
 export class NeuronService {
   constructor(private readonly api: ApiClient) {}
@@ -21,6 +28,68 @@ export class NeuronService {
       neurons: neurons.totalCount,
       neuronTypes: neuronTypes.totalCount,
       synapses: synapses.totalCount,
+    };
+  }
+
+  async listNeurons(brainId: string): Promise<NeuronDto[]> {
+    const all: NeuronDto[] = [];
+    let page = 1;
+    const pageSize = 255;
+    while (true) {
+      const resp = await this.api.get<PaginatedResponse<NeuronDto>>(
+        `/api/neurons?brainId=${brainId}&pageSize=${pageSize}&pageNumber=${page}`
+      );
+      all.push(...resp.items);
+      if (page >= resp.totalPages) break;
+      page++;
+    }
+    return all;
+  }
+
+  async listNeuronTypes(brainId: string): Promise<NeuronTypeDto[]> {
+    const resp = await this.api.get<PaginatedResponse<NeuronTypeDto>>(
+      `/api/neuron-types?brainId=${brainId}&pageSize=255`
+    );
+    return resp.items;
+  }
+
+  async listSynapses(brainId: string): Promise<SynapseDto[]> {
+    const all: SynapseDto[] = [];
+    let page = 1;
+    const pageSize = 255;
+    while (true) {
+      const resp = await this.api.get<PaginatedResponse<SynapseDto>>(
+        `/api/synapses?brainId=${brainId}&pageSize=${pageSize}&pageNumber=${page}`
+      );
+      all.push(...resp.items);
+      if (page >= resp.totalPages) break;
+      page++;
+    }
+    return all;
+  }
+
+  async updateNeuron(neuronId: string, data: { name: string; content: string; neuronTypeId: string }): Promise<NeuronDto> {
+    return this.api.put<NeuronDto>(`/api/neurons/${neuronId}`, data);
+  }
+
+  async getBrainGraphData(brainId: string, brainName: string): Promise<BrainGraphData> {
+    const [neurons, neuronTypes, synapses] = await Promise.all([
+      this.listNeurons(brainId),
+      this.listNeuronTypes(brainId),
+      this.listSynapses(brainId),
+    ]);
+
+    return {
+      brainId,
+      brainName,
+      neurons,
+      neuronTypes,
+      synapses,
+      counts: {
+        neurons: neurons.length,
+        neuronTypes: neuronTypes.length,
+        synapses: synapses.length,
+      },
     };
   }
 }

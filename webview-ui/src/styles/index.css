@@ -19,6 +19,42 @@ body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  max-width: 360px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* Logo header */
+.logo-header {
+  padding: 8px 12px 4px;
+  flex-shrink: 0;
+}
+
+.logo-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.85;
+  transition: opacity 0.15s;
+}
+
+.logo-btn:hover {
+  opacity: 1;
+}
+
+.logo-img {
+  height: 22px;
+  width: auto;
+}
+
+.logo-text {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--vscode-foreground);
+  letter-spacing: -0.5px;
 }
 
 /* Buttons */
@@ -397,6 +433,154 @@ input::placeholder, textarea::placeholder {
 .link:hover {
   text-decoration: underline;
   color: var(--vscode-textLink-activeForeground);
+}
+
+/* App shell with tabs */
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.tab-bar {
+  display: flex;
+  border-bottom: 1px solid var(--vscode-sideBar-border, var(--vscode-panel-border, rgba(128,128,128,0.2)));
+  flex-shrink: 0;
+}
+
+.tab-btn {
+  flex: 1;
+  padding: 8px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s;
+}
+
+.tab-btn:hover {
+  color: var(--vscode-foreground);
+}
+
+.tab-btn.active {
+  color: var(--vscode-foreground);
+  border-bottom-color: var(--vscode-focusBorder, var(--vscode-button-background));
+}
+
+.tab-content {
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* FAQ / Help sections */
+.faq-section {
+  border-bottom: 1px solid var(--vscode-sideBar-border, var(--vscode-panel-border, rgba(128,128,128,0.12)));
+}
+
+.faq-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 4px;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  border: none;
+}
+
+.faq-toggle:hover {
+  background-color: var(--vscode-list-hoverBackground);
+}
+
+.faq-content {
+  padding: 4px 8px 12px 22px;
+  font-size: 12px;
+  color: var(--vscode-foreground);
+  line-height: 1.6;
+}
+
+.faq-content p {
+  margin: 4px 0;
+}
+
+.faq-content ul, .faq-content ol {
+  margin: 4px 0;
+  padding-left: 18px;
+}
+
+.faq-content li {
+  margin: 2px 0;
+}
+
+.faq-content code {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 11px;
+  background-color: var(--vscode-textCodeBlock-background, rgba(128,128,128,0.15));
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+
+.faq-code {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 11px;
+  background-color: var(--vscode-textCodeBlock-background, rgba(128,128,128,0.15));
+  padding: 8px;
+  border-radius: 3px;
+  overflow-x: auto;
+  white-space: pre;
+  line-height: 1.5;
+  margin: 6px 0;
+}
+
+/* Prompt list */
+.prompt-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.prompt-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 3px;
+  transition: background-color 0.1s;
+}
+
+.prompt-item:hover {
+  background-color: var(--vscode-list-hoverBackground);
+}
+
+.prompt-item-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.prompt-item-label {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.prompt-item-text {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  line-height: 1.5;
+}
+
+.prompt-copy-btn {
+  flex-shrink: 0;
+  margin-top: 2px;
 }
 
 /* Welcome/empty state */

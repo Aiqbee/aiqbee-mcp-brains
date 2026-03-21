@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useReducer } from 'react';
+import { useCallback, useEffect, useReducer, useState } from 'react';
 import { useVsCode, useMessageListener } from './hooks/useVsCode';
 import { LoginPage } from './pages/LoginPage';
 import { SignUpPage } from './pages/SignUpPage';
 import { BrainsPage } from './pages/BrainsPage';
+import { HelpPage } from './pages/HelpPage';
+import { PromptsPage } from './pages/PromptsPage';
 
 interface UserDto {
   id: string;
@@ -52,6 +54,30 @@ function reducer(state: AppState, action: AppAction): AppState {
   }
 }
 
+type Tab = 'brains' | 'help' | 'prompts';
+
+// Logo URIs injected by sidebar-provider.ts into window globals
+const logoUrl = (window as any).__AIQBEE_LOGO_REVERSED__ || (window as any).__AIQBEE_LOGO__ || '';
+
+function LogoHeader({ postMessage }: { postMessage: (msg: any) => void }) {
+  return (
+    <div className="logo-header">
+      <button
+        type="button"
+        className="logo-btn"
+        onClick={() => postMessage({ command: 'openExternal', payload: { url: 'https://www.aiqbee.com' } })}
+        title="Open aiqbee.com"
+      >
+        {logoUrl ? (
+          <img src={logoUrl} alt="Aiqbee" className="logo-img" />
+        ) : (
+          <span className="logo-text">aiqbee</span>
+        )}
+      </button>
+    </div>
+  );
+}
+
 export default function App() {
   const { postMessage } = useVsCode();
   const [state, dispatch] = useReducer(reducer, {
@@ -59,6 +85,7 @@ export default function App() {
     authenticated: false,
     loading: true,
   });
+  const [activeTab, setActiveTab] = useState<Tab>('brains');
 
   // Listen for messages from extension host
   useMessageListener(
@@ -93,43 +120,87 @@ export default function App() {
 
   if (state.loading && !state.authenticated && state.page === 'login') {
     return (
-      <div className="loading-container">
-        <div className="spinner" />
-        <span>Loading...</span>
-      </div>
+      <>
+        <LogoHeader postMessage={postMessage} />
+        <div className="loading-container">
+          <div className="spinner" />
+          <span>Loading...</span>
+        </div>
+      </>
     );
   }
 
-  switch (state.page) {
-    case 'login':
-      return (
-        <LoginPage
-          loading={state.loading}
-          error={state.error}
-          environment={state.environment}
-          onSignInMicrosoft={() => postMessage({ command: 'signInMicrosoft' })}
-          onSignInGoogle={() => postMessage({ command: 'signInGoogle' })}
-          onSignInEmail={(email, password) =>
-            postMessage({ command: 'signInEmail', payload: { email, password } })
-          }
-          onCreateAccount={goToSignUp}
-        />
-      );
-    case 'signup':
-      return (
-        <SignUpPage
-          loading={state.loading}
-          error={state.error}
-          onRegister={(data) => postMessage({ command: 'register', payload: data })}
-          onBackToLogin={goToLogin}
-        />
-      );
-    case 'brains':
-      return (
-        <BrainsPage
-          user={state.user}
-          onSignOut={() => postMessage({ command: 'signOut' })}
-        />
-      );
+  // Pre-auth pages (no tabs)
+  if (state.page === 'login') {
+    return (
+      <>
+      <LogoHeader postMessage={postMessage} />
+      <LoginPage
+        loading={state.loading}
+        error={state.error}
+        environment={state.environment}
+        onSignInMicrosoft={() => postMessage({ command: 'signInMicrosoft' })}
+        onSignInGoogle={() => postMessage({ command: 'signInGoogle' })}
+        onSignInEmail={(email, password) =>
+          postMessage({ command: 'signInEmail', payload: { email, password } })
+        }
+        onCreateAccount={goToSignUp}
+      />
+      </>
+    );
   }
+
+  if (state.page === 'signup') {
+    return (
+      <>
+      <LogoHeader postMessage={postMessage} />
+      <SignUpPage
+        loading={state.loading}
+        error={state.error}
+        onRegister={(data) => postMessage({ command: 'register', payload: data })}
+        onBackToLogin={goToLogin}
+      />
+      </>
+    );
+  }
+
+  // Authenticated: show tab bar + content
+  return (
+    <div className="app-shell">
+      <LogoHeader postMessage={postMessage} />
+      <div className="tab-bar">
+        <button
+          type="button"
+          className={`tab-btn${activeTab === 'brains' ? ' active' : ''}`}
+          onClick={() => setActiveTab('brains')}
+        >
+          Brains
+        </button>
+        <button
+          type="button"
+          className={`tab-btn${activeTab === 'help' ? ' active' : ''}`}
+          onClick={() => setActiveTab('help')}
+        >
+          Help
+        </button>
+        <button
+          type="button"
+          className={`tab-btn${activeTab === 'prompts' ? ' active' : ''}`}
+          onClick={() => setActiveTab('prompts')}
+        >
+          Prompts
+        </button>
+      </div>
+      <div className="tab-content">
+        {activeTab === 'brains' && (
+          <BrainsPage
+            user={state.user}
+            onSignOut={() => postMessage({ command: 'signOut' })}
+          />
+        )}
+        {activeTab === 'help' && <HelpPage />}
+        {activeTab === 'prompts' && <PromptsPage />}
+      </div>
+    </div>
+  );
 }

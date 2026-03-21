@@ -16,6 +16,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     private readonly authService: AuthService,
     private readonly brainService: BrainService,
     private readonly neuronService: NeuronService,
+    private readonly openGraph: (brainId: string, brainName: string, canWrite: boolean) => void,
   ) {
     // Forward auth state changes to webview
     this.authService.onAuthStateChanged((state) => {
@@ -134,6 +135,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           await addMcpConnection(message.payload.brainId, message.payload.brainName);
           break;
         }
+
+        case 'openBrainGraph': {
+          this.openGraph(message.payload.brainId, message.payload.brainName, message.payload.canWrite);
+          break;
+        }
+
+        case 'openExternal': {
+          vscode.env.openExternal(vscode.Uri.parse(message.payload.url));
+          break;
+        }
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -167,16 +178,27 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
     const nonce = getNonce();
 
+    const logoUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, 'media', 'aiqbee-logo.png'),
+    );
+    const logoReversedUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, 'media', 'aiqbee-logo-reversed.png'),
+    );
+
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; font-src ${webview.cspSource};">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; font-src ${webview.cspSource}; img-src ${webview.cspSource} https:;">
   ${cssUri ? `<link rel="stylesheet" href="${cssUri}">` : ''}
   <title>Aiqbee Brain Manager</title>
 </head>
 <body>
+  <script nonce="${nonce}">
+    window.__AIQBEE_LOGO__ = "${logoUri}";
+    window.__AIQBEE_LOGO_REVERSED__ = "${logoReversedUri}";
+  </script>
   <div id="root"></div>
   ${jsUri ? `<script nonce="${nonce}" type="module" src="${jsUri}"></script>` : '<p>Build the webview first: cd webview-ui && npm run build</p>'}
 </body>

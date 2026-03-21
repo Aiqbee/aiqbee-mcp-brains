@@ -5,6 +5,7 @@ import { ApiClient } from './api/api-client.js';
 import { BrainService } from './api/brain-service.js';
 import { NeuronService } from './api/neuron-service.js';
 import { SidebarProvider } from './views/sidebar-provider.js';
+import { BrainGraphPanel } from './views/brain-graph-panel.js';
 
 export function activate(context: vscode.ExtensionContext): void {
   // Core services
@@ -23,6 +24,9 @@ export function activate(context: vscode.ExtensionContext): void {
     authService,
     brainService,
     neuronService,
+    (brainId: string, brainName: string, canWrite: boolean) => {
+      BrainGraphPanel.createOrShow(context.extensionUri, neuronService, brainId, brainName, canWrite);
+    },
   );
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(

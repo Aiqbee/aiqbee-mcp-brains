@@ -106,6 +106,43 @@ export interface EmailRegisterDto {
   jobTitle?: string;
 }
 
+// Graph data types
+export interface NeuronDto {
+  id: string;
+  name: string;
+  content?: string;
+  brainId: string;
+  neuronTypeId: string;
+  neuronTypeName?: string;
+  createdDate?: string;
+  modifiedDate?: string;
+}
+
+export interface NeuronTypeDto {
+  id: string;
+  name: string;
+  description?: string;
+  brainId: string;
+  isFileType: boolean;
+}
+
+export interface SynapseDto {
+  id: string;
+  sourceNeuronId: string;
+  targetNeuronId: string;
+  linkDescription?: string;
+  brainId: string;
+}
+
+export interface BrainGraphData {
+  brainId: string;
+  brainName: string;
+  neurons: NeuronDto[];
+  neuronTypes: NeuronTypeDto[];
+  synapses: SynapseDto[];
+  counts: BrainCounts;
+}
+
 // Message types for webview ↔ extension host communication
 export type WebviewMessage =
   | { command: 'signInMicrosoft' }
@@ -119,6 +156,8 @@ export type WebviewMessage =
   | { command: 'getBrainCounts'; payload: { brainId: string } }
   | { command: 'getBrainTemplates' }
   | { command: 'addMcpConnection'; payload: { brainId: string; brainName: string } }
+  | { command: 'openBrainGraph'; payload: { brainId: string; brainName: string; canWrite: boolean } }
+  | { command: 'openExternal'; payload: { url: string } }
   | { command: 'ready' };
 
 export type ExtensionMessage =
