@@ -345,9 +345,23 @@ export class BrainGraphPanel {
       top: 0; left: 0; right: 0; bottom: 0;
       display: flex; align-items: center; justify-content: center;
       background: var(--vscode-editor-background, rgba(30,30,30,0.9));
-      opacity: 0.92;
       z-index: 30;
       flex-direction: column; gap: 12px;
+    }
+    /* Compact status bar shown during progressive loading */
+    #loading-status {
+      display: none;
+      position: absolute;
+      bottom: 12px; right: 12px;
+      padding: 5px 12px;
+      background: var(--vscode-editor-background, #1e1e1e);
+      border: 1px solid var(--vscode-widget-border, rgba(255,255,255,0.12));
+      border-radius: 4px;
+      font-size: 11px;
+      color: var(--vscode-editor-foreground, #ccc);
+      z-index: 25;
+      align-items: center;
+      gap: 8px;
     }
     .spinner {
       width: 24px; height: 24px;
@@ -418,6 +432,11 @@ export class BrainGraphPanel {
   <div id="loading-overlay">
     <div class="spinner"></div>
     <span>Loading brain data...</span>
+  </div>
+
+  <div id="loading-status">
+    <div class="spinner-small"></div>
+    <span id="loading-status-text">Loading...</span>
   </div>
 
   <script nonce="${nonce}" src="${forceGraphUri}"></script>
@@ -499,6 +518,8 @@ export class BrainGraphPanel {
     const popupBody = document.getElementById('node-popup-body');
     const popupFooter = document.getElementById('node-popup-footer');
     const popupClose = document.getElementById('node-popup-close');
+    const loadingStatus = document.getElementById('loading-status');
+    const loadingStatusText = document.getElementById('loading-status-text');
 
     // --- Legend toggle ---
     let legendOpen = true;
@@ -841,17 +862,20 @@ export class BrainGraphPanel {
           break;
         case 'graphNeuronsPage':
           allNeurons = allNeurons.concat(msg.neurons);
-          if (loadingText) loadingText.textContent = 'Loading neurons... (' + allNeurons.length + ')';
-          // Render incrementally after each page
+          // Switch from full overlay to compact status bar so graph is visible
+          loadingOverlay.style.display = 'none';
+          loadingStatus.style.display = 'flex';
+          loadingStatusText.textContent = 'Loading neurons... (' + allNeurons.length + ')';
           renderProgressiveGraph();
           break;
         case 'graphSynapsesPage':
           allSynapses = allSynapses.concat(msg.synapses);
-          if (loadingText) loadingText.textContent = 'Loading synapses... (' + allSynapses.length + ')';
+          loadingStatusText.textContent = 'Loading synapses... (' + allSynapses.length + ')';
           renderProgressiveGraph();
           break;
         case 'graphComplete':
           loadingOverlay.style.display = 'none';
+          loadingStatus.style.display = 'none';
           renderProgressiveGraph();
           setTimeout(() => {
             if (graphInstance) graphInstance.zoomToFit(400, 40);
