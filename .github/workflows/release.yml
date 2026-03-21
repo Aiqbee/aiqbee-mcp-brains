@@ -30,11 +30,11 @@ jobs:
           node esbuild.js --mode=euprod --production
           cd webview-ui && npm run build -- --mode euprod
 
-      - name: Detect pre-release
+      - name: Detect pre-release from tag
         id: prerelease
         run: |
-          VERSION=$(node -p "require('./package.json').version")
-          if echo "$VERSION" | grep -qE '(alpha|beta|rc)'; then
+          TAG="${GITHUB_REF#refs/tags/}"
+          if echo "$TAG" | grep -qE '(-alpha|-beta|-rc)'; then
             echo "flag=--pre-release" >> $GITHUB_OUTPUT
             echo "is_prerelease=true" >> $GITHUB_OUTPUT
           else
