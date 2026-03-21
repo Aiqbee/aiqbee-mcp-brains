@@ -30,6 +30,14 @@ export const window = {
   showErrorMessage: async () => undefined,
   showWarningMessage: async () => undefined,
   showQuickPick: async () => undefined,
+  createOutputChannel: () => ({
+    appendLine: () => {},
+    append: () => {},
+    clear: () => {},
+    show: () => {},
+    hide: () => {},
+    dispose: () => {},
+  }),
 };
 
 export const EventEmitter = class {

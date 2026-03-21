@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import { TokenStorage } from '../auth/token-storage.js';
 
+const log = vscode.window.createOutputChannel('Aiqbee API');
+
 export class ApiRequestError extends Error {
   constructor(
     message: string,
@@ -109,13 +111,18 @@ export class ApiClient {
       headers['Authorization'] = `Bearer ${token}`;
     }
 
+    log.appendLine(`${init.method} ${path}${isRetry ? ' (retry)' : ''}`);
+
     const response = await fetch(url, {
       ...init,
       headers,
       signal: AbortSignal.timeout(180_000),
     });
 
+    log.appendLine(`  → ${response.status} ${response.statusText} [${response.headers.get('content-type') ?? 'no content-type'}]`);
+
     if (response.status === 401 && !isRetry && this.onRefreshToken) {
+      log.appendLine('  → 401 — attempting token refresh');
       const refreshed = await this.deduplicatedRefresh();
       if (refreshed) {
         return this.request<T>(path, init, true);
@@ -125,6 +132,7 @@ export class ApiClient {
 
     if (!response.ok) {
       const text = await response.text().catch(() => '');
+      log.appendLine(`  → ERROR body: ${text.substring(0, 500)}`);
       throw new ApiRequestError(
         `Request failed: ${response.status} ${response.statusText}`,
         response.status,
@@ -134,9 +142,12 @@ export class ApiClient {
 
     const contentType = response.headers.get('content-type');
     if (contentType?.includes('application/json')) {
-      return response.json() as Promise<T>;
+      const json = await response.json();
+      log.appendLine(`  → JSON keys: ${typeof json === 'object' && json ? Object.keys(json).join(', ') : typeof json}${Array.isArray(json) ? ` (array[${json.length}])` : ''}`);
+      return json as T;
     }
 
+    log.appendLine('  → no JSON content');
     return undefined as unknown as T;
   }
 

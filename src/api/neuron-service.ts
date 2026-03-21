@@ -70,6 +70,46 @@ export class NeuronService {
     return all;
   }
 
+  async listNeuronsProgressive(
+    brainId: string,
+    onPage: (page: number, items: NeuronDto[]) => void,
+  ): Promise<NeuronDto[]> {
+    const all: NeuronDto[] = [];
+    let page = 1;
+    const pageSize = 50;
+    while (true) {
+      const resp = await this.api.get<PaginatedResponse<NeuronDto>>(
+        `/api/neurons?brainId=${brainId}&pageSize=${pageSize}&pageNumber=${page}`
+      );
+      if (!resp?.items || resp.items.length === 0) break;
+      all.push(...resp.items);
+      onPage(page, resp.items);
+      if (page >= resp.totalPages) break;
+      page++;
+    }
+    return all;
+  }
+
+  async listSynapsesProgressive(
+    brainId: string,
+    onPage: (page: number, items: SynapseDto[]) => void,
+  ): Promise<SynapseDto[]> {
+    const all: SynapseDto[] = [];
+    let page = 1;
+    const pageSize = 50;
+    while (true) {
+      const resp = await this.api.get<PaginatedResponse<SynapseDto>>(
+        `/api/synapses?brainId=${brainId}&pageSize=${pageSize}&pageNumber=${page}`
+      );
+      if (!resp?.items || resp.items.length === 0) break;
+      all.push(...resp.items);
+      onPage(page, resp.items);
+      if (page >= resp.totalPages) break;
+      page++;
+    }
+    return all;
+  }
+
   async updateNeuron(neuronId: string, data: { name: string; content: string; neuronTypeId: string }): Promise<NeuronDto> {
     return this.api.put<NeuronDto>(`/api/neurons/${neuronId}`, data);
   }
