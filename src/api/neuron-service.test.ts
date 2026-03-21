@@ -12,8 +12,8 @@ function createMockApiClient() {
   } as unknown as ApiClient;
 }
 
-function paginated<T>(items: T[], page = 1, totalPages = 1): PaginatedResponse<T> {
-  return { items, totalCount: items.length, pageNumber: page, pageSize: 255, totalPages };
+function paginated<T>(records: T[], page = 1, totalPages = 1): PaginatedResponse<T> {
+  return { records, totalRecords: records.length, page, totalPages };
 }
 
 const BRAIN_ID = 'brain-001';
@@ -30,9 +30,9 @@ describe('NeuronService', () => {
   describe('getBrainCounts', () => {
     it('fetches counts from paginated endpoints', async () => {
       (api.get as any)
-        .mockResolvedValueOnce({ totalCount: 42 })
-        .mockResolvedValueOnce({ totalCount: 5 })
-        .mockResolvedValueOnce({ totalCount: 30 });
+        .mockResolvedValueOnce({ totalRecords: 42 })
+        .mockResolvedValueOnce({ totalRecords: 5 })
+        .mockResolvedValueOnce({ totalRecords: 30 });
 
       const counts = await service.getBrainCounts(BRAIN_ID);
 
