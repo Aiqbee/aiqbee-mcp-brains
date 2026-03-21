@@ -37,7 +37,7 @@
   "main": "./dist/extension.js",
   "icon": "media/aiqbee-icon.png",
   "galleryBanner": {
-    "color": "#1e1e1e",
+    "color": "#0a0a0f",
     "theme": "dark"
   },
   "contributes": {

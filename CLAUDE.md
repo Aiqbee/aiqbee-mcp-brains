@@ -62,6 +62,13 @@ npm run package:dev            # Package VSIX (dev env)
 npm run package:prod           # Package VSIX (prod env)
 ```
 
+## Publishing
+
+- **VSCE_PAT** is stored as an encrypted GitHub Actions secret (repo Settings → Secrets → Actions)
+- Marketplace publish is triggered by pushing a `v*` tag to master (see `.github/workflows/release.yml`)
+- To publish: merge to master, then `npm version patch && git push && git push --tags`
+- PAT was created in Azure DevOps under the Aiqbee organization — rotate annually
+
 ## New Session Checklist
 
 1. Read `tasks/log.md` for recent context
