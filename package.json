@@ -1,8 +1,8 @@
 {
   "name": "aiqbee-mcp-brains",
   "displayName": "Aiqbee MCP Brains",
-  "description": "Browse, visualise and manage Aiqbee knowledge brains. One-click MCP connections for Claude Code, Cursor, Windsurf and other AI coding assistants.",
-  "version": "0.1.0",
+  "description": "Browse, visualise and manage Aiqbee knowledge brains. One-click MCP connections for Claude Code, Cursor, Windsurf and other AI coding assistants. (Public Beta)",
+  "version": "0.2.0",
   "publisher": "aiqbee",
   "license": "MIT",
   "repository": {
