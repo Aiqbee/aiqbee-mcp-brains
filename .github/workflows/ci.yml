@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [develop, master]
+  pull_request:
+    branches: [develop, master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install extension dependencies
+        run: npm ci
+
+      - name: Install webview dependencies
+        run: cd webview-ui && npm ci
+
+      - name: Extension host tests
+        run: npm run test
+
+      - name: Webview tests
+        run: cd webview-ui && npx vitest run
+
+      - name: Build (dev)
+        run: npm run compile:dev
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci && cd webview-ui && npm ci
+
+      - name: Determine environment
+        id: env
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/master" ]; then
+            echo "mode=euprod" >> $GITHUB_OUTPUT
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+          else
+            echo "mode=eudev" >> $GITHUB_OUTPUT
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build extension
+        run: |
+          node esbuild.js --mode=${{ steps.env.outputs.mode }} --production
+          cd webview-ui && npm run build -- --mode ${{ steps.env.outputs.mode }}
+
+      - name: Package VSIX
+        run: npx @vscode/vsce package --no-dependencies
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vsix-${{ steps.env.outputs.mode }}
+          path: "*.vsix"
