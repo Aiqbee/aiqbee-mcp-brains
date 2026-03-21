@@ -13,13 +13,17 @@ vi.mock('fs/promises', () => ({
 
 const { addMcpConnection } = await import('./mcp-config.js');
 
+const originalViteApiUrl = process.env.VITE_API_URL;
+
 describe('addMcpConnection', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env.VITE_API_URL = 'https://api.aiqbee.com';
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+    process.env.VITE_API_URL = originalViteApiUrl;
   });
 
   it('shows warning when no workspace is open', async () => {

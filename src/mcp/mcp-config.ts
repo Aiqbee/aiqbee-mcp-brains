@@ -75,10 +75,13 @@ export async function addMcpConnection(brainId: string, brainName: string): Prom
 
   const configPath = target.configPath;
   const entryName = `Aiqbee Brain: ${brainName}`;
-  const mcpBaseUrl = (process.env.VITE_API_URL || 'https://api.aiqbee.com').replace('api.', 'mcp.');
+  const apiUrl = process.env.VITE_API_URL || 'https://api.aiqbee.com';
+  const baseUrl = new URL(apiUrl);
+  baseUrl.hostname = baseUrl.hostname.replace(/^api\./, 'mcp.');
+  const mcpBaseUrl = baseUrl.toString().replace(/\/$/, '');
   const serverEntry: McpServerEntry = {
     type: 'http',
-    url: `${mcpBaseUrl}/brain/${brainId}/mcp`,
+    url: `${mcpBaseUrl}/brain/${encodeURIComponent(brainId)}/mcp`,
   };
 
   try {
