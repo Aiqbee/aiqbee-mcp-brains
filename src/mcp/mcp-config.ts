@@ -9,7 +9,7 @@ interface McpConfig {
 }
 
 interface McpServerEntry {
-  type: string;
+  type: 'http';
   url: string;
   [key: string]: unknown;
 }
