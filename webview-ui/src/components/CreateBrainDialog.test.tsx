@@ -27,13 +27,13 @@ describe('CreateBrainDialog', () => {
 
     expect(screen.getByLabelText('Name')).toBeInTheDocument();
     expect(screen.getByLabelText('Description (optional)')).toBeInTheDocument();
-    expect(screen.getByLabelText('Template (optional)')).toBeInTheDocument();
+    expect(screen.getByLabelText('Template')).toBeInTheDocument();
   });
 
   it('selects default template automatically', () => {
     render(<CreateBrainDialog templates={templates} onClose={vi.fn()} />);
 
-    const select = screen.getByLabelText('Template (optional)') as HTMLSelectElement;
+    const select = screen.getByLabelText('Template') as HTMLSelectElement;
     expect(select.value).toBe('t1');
   });
 

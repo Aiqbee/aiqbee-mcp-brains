@@ -67,10 +67,14 @@ export function SignUpPage({ loading, error, onRegister, onBackToLogin }: SignUp
   return (
     <div className="page">
       <div className="page-header">
-        <span className="page-title">Create Account</span>
+        <span className="page-title">Create Email Account</span>
         <button className="link" onClick={onBackToLogin} style={{ background: 'none', border: 'none' }}>
           Back to Sign In
         </button>
+      </div>
+
+      <div className="auth-info">
+        Create an Aiqbee account using your email address. If you have a Microsoft or Google work account, you can sign in directly from the login page instead — no registration needed.
       </div>
 
       {(error || validationError) && (

@@ -11,13 +11,14 @@ interface BrainTemplateDto {
 
 interface CreateBrainDialogProps {
   templates: BrainTemplateDto[];
+  prefill?: { name: string; description: string };
   onClose: () => void;
 }
 
-export function CreateBrainDialog({ templates, onClose }: CreateBrainDialogProps) {
+export function CreateBrainDialog({ templates, prefill, onClose }: CreateBrainDialogProps) {
   const { postMessage } = useVsCode();
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
+  const [name, setName] = useState(prefill?.name ?? '');
+  const [description, setDescription] = useState(prefill?.description ?? '');
   const [templateId, setTemplateId] = useState(() => {
     const defaultTemplate = templates.find((t) => t.isDefault);
     return defaultTemplate?.id || '';
@@ -68,23 +69,23 @@ export function CreateBrainDialog({ templates, onClose }: CreateBrainDialogProps
               placeholder="What is this brain for?"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              rows={2}
+              rows={3}
               style={{ resize: 'vertical' }}
             />
           </div>
 
           {templates.length > 0 && (
             <div className="form-group">
-              <label htmlFor="brainTemplate">Template (optional)</label>
+              <label htmlFor="brainTemplate">Template</label>
               <select
                 id="brainTemplate"
                 value={templateId}
                 onChange={(e) => setTemplateId(e.target.value)}
               >
-                <option value="">No template</option>
+                <option value="">No template (blank brain)</option>
                 {templates.map((t) => (
                   <option key={t.id} value={t.id}>
-                    {t.name}{t.isDefault ? ' (default)' : ''}
+                    {t.name}{t.isDefault ? ' (recommended)' : ''}
                   </option>
                 ))}
               </select>

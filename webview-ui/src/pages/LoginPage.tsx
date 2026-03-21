@@ -49,19 +49,23 @@ export function LoginPage({
 
       {error && <div className="error-message">{error}</div>}
 
+      <div className="auth-info">
+        Already have a Microsoft or Google work account? Sign in directly — your Aiqbee account will be created automatically on first sign-in.
+      </div>
+
       <div className="auth-buttons">
         <button
           className="auth-button auth-button-microsoft"
           onClick={onSignInMicrosoft}
           disabled={loading}
         >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <rect x="1" y="1" width="6.5" height="6.5" />
-            <rect x="8.5" y="1" width="6.5" height="6.5" />
-            <rect x="1" y="8.5" width="6.5" height="6.5" />
-            <rect x="8.5" y="8.5" width="6.5" height="6.5" />
+          <svg width="16" height="16" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
+            <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
+            <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
+            <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
           </svg>
-          Sign in with Microsoft
+          <span>Sign in with Microsoft</span>
           {loading && <div className="spinner" style={{ width: 12, height: 12, borderWidth: 1.5 }} />}
         </button>
 
@@ -70,11 +74,13 @@ export function LoginPage({
           onClick={onSignInGoogle}
           disabled={loading}
         >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M8 3.2c1.3 0 2.4.4 3.3 1.2l2.4-2.4C12.3.8 10.3 0 8 0 4.9 0 2.2 1.7.9 4.2l2.8 2.2C4.4 4.4 6 3.2 8 3.2z" />
-            <path d="M15.6 8.2c0-.6-.1-1.2-.2-1.8H8v3.4h4.3c-.2 1-.7 1.8-1.5 2.4l2.8 2.2c1.5-1.4 2.4-3.5 2.4-6.2z" />
+          <svg width="16" height="16" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+            <path d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z" fill="#FFC107"/>
+            <path d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z" fill="#FF3D00"/>
+            <path d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0124 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z" fill="#4CAF50"/>
+            <path d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 01-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z" fill="#1976D2"/>
           </svg>
-          Sign in with Google
+          <span>Sign in with Google</span>
         </button>
 
         <button
@@ -85,7 +91,7 @@ export function LoginPage({
           <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
             <path d="M1 4l7 4 7-4v8H1V4zm0-1h14l-7 4L1 3z" />
           </svg>
-          Sign in with Email
+          <span>Sign in with Email</span>
         </button>
       </div>
 
@@ -124,10 +130,10 @@ export function LoginPage({
 
       <div style={{ textAlign: 'center' }}>
         <span style={{ fontSize: 12, color: 'var(--vscode-descriptionForeground)' }}>
-          Don't have an account?{' '}
+          No account yet?{' '}
         </span>
         <button className="link" onClick={onCreateAccount} style={{ background: 'none', border: 'none' }}>
-          Create Account
+          Create an email account
         </button>
       </div>
 

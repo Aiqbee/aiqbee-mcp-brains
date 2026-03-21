@@ -47,7 +47,9 @@ export function BrainsPage({ user, onSignOut }: BrainsPageProps) {
   const [templates, setTemplates] = useState<BrainTemplateDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [firstBrainPrompt, setFirstBrainPrompt] = useState(false);
   const [error, setError] = useState<string>();
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
 
   // Listen for messages from extension host
   useMessageListener(
@@ -57,6 +59,14 @@ export function BrainsPage({ user, onSignOut }: BrainsPageProps) {
         case 'brainsLoaded':
           setBrains(message.payload);
           setLoading(false);
+          if (!initialLoadDone) {
+            setInitialLoadDone(true);
+            // If no brains on first load, show the first-brain prompt
+            if (message.payload.length === 0) {
+              postMessage({ command: 'getBrainTemplates' });
+              setFirstBrainPrompt(true);
+            }
+          }
           break;
         case 'brainCounts':
           setCounts((prev) => ({
@@ -66,6 +76,7 @@ export function BrainsPage({ user, onSignOut }: BrainsPageProps) {
           break;
         case 'brainCreated':
           setShowCreateDialog(false);
+          setFirstBrainPrompt(false);
           // Refresh the brain list
           postMessage({ command: 'listBrains' });
           break;
@@ -82,7 +93,7 @@ export function BrainsPage({ user, onSignOut }: BrainsPageProps) {
           setLoading(false);
           break;
       }
-    }, [postMessage]),
+    }, [postMessage, initialLoadDone]),
   );
 
   // Load brains on mount
@@ -176,7 +187,37 @@ export function BrainsPage({ user, onSignOut }: BrainsPageProps) {
         </div>
       )}
 
-      {brains.length === 0 && !loading && !error && (
+      {firstBrainPrompt && brains.length === 0 && !loading && !error && (
+        <div className="welcome">
+          <div className="welcome-title">Welcome to Aiqbee!</div>
+          <div className="welcome-desc">
+            You don't have any brains yet. Would you like to create a
+            starter brain with pre-built neuron types for development
+            patterns, practices, and recipes?
+          </div>
+          <div className="welcome-actions">
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => {
+                setFirstBrainPrompt(false);
+                setShowCreateDialog(true);
+              }}
+            >
+              Yes, create a brain
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => setFirstBrainPrompt(false)}
+            >
+              Not now
+            </button>
+          </div>
+        </div>
+      )}
+
+      {brains.length === 0 && !loading && !error && !firstBrainPrompt && (
         <div className="welcome">
           <div className="welcome-desc">
             No brains found. Create your first brain to get started.
@@ -187,6 +228,10 @@ export function BrainsPage({ user, onSignOut }: BrainsPageProps) {
       {showCreateDialog && (
         <CreateBrainDialog
           templates={templates}
+          prefill={brains.length === 0 ? {
+            name: 'Development Patterns & Practices',
+            description: 'Shared knowledge base for development standards, coding patterns, architecture decisions, and lessons learned across the team.',
+          } : undefined}
           onClose={() => setShowCreateDialog(false)}
         />
       )}
