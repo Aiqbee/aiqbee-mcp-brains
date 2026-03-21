@@ -10,18 +10,23 @@ const modeArg = process.argv.find((a) => a.startsWith('--mode='));
 const mode = modeArg ? modeArg.split('=')[1] : 'eudev';
 const envFile = path.resolve(__dirname, `.env.${mode}`);
 
-// Parse .env file into key-value pairs
+// Parse .env file into key-value pairs — fail fast if missing during production build
 function loadEnvFile(filePath) {
+  if (!fs.existsSync(filePath)) {
+    if (production) {
+      throw new Error(`Missing environment file: ${filePath}`);
+    }
+    console.warn(`Warning: ${filePath} not found, using defaults`);
+    return {};
+  }
   const vars = {};
-  if (fs.existsSync(filePath)) {
-    const lines = fs.readFileSync(filePath, 'utf8').split('\n');
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (trimmed && !trimmed.startsWith('#')) {
-        const eqIdx = trimmed.indexOf('=');
-        if (eqIdx > 0) {
-          vars[trimmed.slice(0, eqIdx)] = trimmed.slice(eqIdx + 1);
-        }
+  const lines = fs.readFileSync(filePath, 'utf8').split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed && !trimmed.startsWith('#')) {
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx > 0) {
+        vars[trimmed.slice(0, eqIdx)] = trimmed.slice(eqIdx + 1);
       }
     }
   }
