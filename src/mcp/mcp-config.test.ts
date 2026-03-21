@@ -13,13 +13,17 @@ vi.mock('fs/promises', () => ({
 
 const { addMcpConnection } = await import('./mcp-config.js');
 
+const originalViteApiUrl = process.env.VITE_API_URL;
+
 describe('addMcpConnection', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env.VITE_API_URL = 'https://api.aiqbee.com';
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+    process.env.VITE_API_URL = originalViteApiUrl;
   });
 
   it('shows warning when no workspace is open', async () => {
@@ -62,8 +66,8 @@ describe('addMcpConnection', () => {
 
     const parsed = JSON.parse(content);
     expect(parsed.mcpServers['Aiqbee Brain: My Brain']).toEqual({
-      command: 'npx',
-      args: ['-y', '@anthropic-ai/claude-code-mcp-server', '--brain-id=brain-123'],
+      type: 'http',
+      url: 'https://mcp.aiqbee.com/brain/brain-123/mcp',
     });
   });
 
