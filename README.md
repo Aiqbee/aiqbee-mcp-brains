@@ -129,12 +129,6 @@ Press `F5` in VS Code to launch the Extension Development Host.
 | `Aiqbee: Refresh Brains`      | Refresh the brain list          |
 | `Aiqbee: Add MCP Connection`  | Add an MCP connection for a brain |
 
-## Configuration
-
-| Setting              | Default       | Description                                      |
-| -------------------- | ------------- | ------------------------------------------------ |
-| `aiqbee.environment` | `development` | API environment (`development` or `production`)  |
-
 ---
 
 ## Contributing
