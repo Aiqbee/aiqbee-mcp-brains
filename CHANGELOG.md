@@ -2,7 +2,9 @@
 
 All notable changes to **Aiqbee MCP Brains** will be documented in this file.
 
-## [0.1.0] - 2026-03-21
+## [0.1.0-beta.1] - 2026-03-21
+
+Initial public beta release.
 
 ### Added
 
