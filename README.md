@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="media/aiqbee-logo.png" alt="Aiqbee" height="48" />
+  <img src="media/aiqbee-logo-reversed.png" alt="Aiqbee" height="48" />
 </p>
 
 <h1 align="center">Aiqbee MCP Brains</h1>
