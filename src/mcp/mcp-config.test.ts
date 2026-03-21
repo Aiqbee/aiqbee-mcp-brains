@@ -62,8 +62,8 @@ describe('addMcpConnection', () => {
 
     const parsed = JSON.parse(content);
     expect(parsed.mcpServers['Aiqbee Brain: My Brain']).toEqual({
-      command: 'npx',
-      args: ['-y', '@anthropic-ai/claude-code-mcp-server', '--brain-id=brain-123'],
+      type: 'http',
+      url: 'https://mcp.aiqbee.com/brain/brain-123/mcp',
     });
   });
 

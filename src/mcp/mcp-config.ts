@@ -9,8 +9,8 @@ interface McpConfig {
 }
 
 interface McpServerEntry {
-  command: string;
-  args: string[];
+  type: string;
+  url: string;
   [key: string]: unknown;
 }
 
@@ -75,9 +75,10 @@ export async function addMcpConnection(brainId: string, brainName: string): Prom
 
   const configPath = target.configPath;
   const entryName = `Aiqbee Brain: ${brainName}`;
+  const mcpBaseUrl = (process.env.VITE_API_URL || 'https://api.aiqbee.com').replace('api.', 'mcp.');
   const serverEntry: McpServerEntry = {
-    command: 'npx',
-    args: ['-y', '@anthropic-ai/claude-code-mcp-server', `--brain-id=${brainId}`],
+    type: 'http',
+    url: `${mcpBaseUrl}/brain/${brainId}/mcp`,
   };
 
   try {
