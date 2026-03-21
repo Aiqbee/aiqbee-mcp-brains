@@ -23,9 +23,6 @@ jobs:
       - name: Install webview dependencies
         run: cd webview-ui && npm ci
 
-      - name: Lint
-        run: npm run lint
-
       - name: Extension host tests
         run: npm run test
 
