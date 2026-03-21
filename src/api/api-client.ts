@@ -132,7 +132,7 @@ export class ApiClient {
 
     if (!response.ok) {
       const text = await response.text().catch(() => '');
-      log.appendLine(`  → ERROR body: ${text.substring(0, 500)}`);
+      log.appendLine(`  → ERROR body: [${text.length} bytes]`);
       throw new ApiRequestError(
         `Request failed: ${response.status} ${response.statusText}`,
         response.status,

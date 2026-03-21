@@ -12,8 +12,8 @@ function createMockApiClient() {
   } as unknown as ApiClient;
 }
 
-function paginated<T>(records: T[], page = 1, totalPages = 1): PaginatedResponse<T> {
-  return { records, totalRecords: records.length, page, totalPages };
+function paginated<T>(records: T[], page = 1, totalPages = 1, totalRecords = records.length): PaginatedResponse<T> {
+  return { records, totalRecords, page, totalPages };
 }
 
 const BRAIN_ID = 'brain-001';

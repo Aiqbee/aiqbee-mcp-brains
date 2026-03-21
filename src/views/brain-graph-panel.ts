@@ -861,7 +861,7 @@ export class BrainGraphPanel {
           if (loadingText) loadingText.textContent = 'Loading neurons...';
           break;
         case 'graphNeuronsPage':
-          allNeurons = allNeurons.concat(msg.neurons);
+          allNeurons.push(...msg.neurons);
           // Switch from full overlay to compact status bar so graph is visible
           loadingOverlay.style.display = 'none';
           loadingStatus.style.display = 'flex';
@@ -869,7 +869,7 @@ export class BrainGraphPanel {
           renderProgressiveGraph();
           break;
         case 'graphSynapsesPage':
-          allSynapses = allSynapses.concat(msg.synapses);
+          allSynapses.push(...msg.synapses);
           loadingStatusText.textContent = 'Loading synapses... (' + allSynapses.length + ')';
           renderProgressiveGraph();
           break;

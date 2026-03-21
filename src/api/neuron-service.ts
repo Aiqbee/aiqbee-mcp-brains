@@ -72,7 +72,7 @@ export class NeuronService {
 
   async listNeuronsProgressive(
     brainId: string,
-    onPage: (page: number, records: NeuronDto[]) => void,
+    onPage: (page: number, records: NeuronDto[]) => void | Promise<void>,
   ): Promise<NeuronDto[]> {
     const all: NeuronDto[] = [];
     let page = 1;
@@ -83,7 +83,7 @@ export class NeuronService {
       );
       if (!resp?.records || resp.records.length === 0) break;
       all.push(...resp.records);
-      onPage(page, resp.records);
+      await onPage(page, resp.records);
       if (page >= resp.totalPages) break;
       page++;
     }
@@ -92,7 +92,7 @@ export class NeuronService {
 
   async listSynapsesProgressive(
     brainId: string,
-    onPage: (page: number, records: SynapseDto[]) => void,
+    onPage: (page: number, records: SynapseDto[]) => void | Promise<void>,
   ): Promise<SynapseDto[]> {
     const all: SynapseDto[] = [];
     let page = 1;
@@ -103,7 +103,7 @@ export class NeuronService {
       );
       if (!resp?.records || resp.records.length === 0) break;
       all.push(...resp.records);
-      onPage(page, resp.records);
+      await onPage(page, resp.records);
       if (page >= resp.totalPages) break;
       page++;
     }
