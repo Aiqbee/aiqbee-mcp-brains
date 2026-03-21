@@ -152,8 +152,8 @@ export class BrainGraphPanel {
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      background: #1e1e1e;
-      color: #d4d4d4;
+      background: var(--vscode-editor-background, #1e1e1e);
+      color: var(--vscode-editor-foreground, #d4d4d4);
       font-family: var(--vscode-font-family, 'Segoe UI', sans-serif);
       font-size: 13px;
       overflow: hidden;
@@ -169,8 +169,8 @@ export class BrainGraphPanel {
       align-items: center;
       gap: 16px;
       padding: 8px 16px;
-      background: rgba(30,30,30,0.92);
-      border-bottom: 1px solid rgba(255,255,255,0.08);
+      background: var(--vscode-editor-background, rgba(30,30,30,0.92));
+      border-bottom: 1px solid var(--vscode-widget-border, rgba(255,255,255,0.08));
       z-index: 20;
       font-size: 12px;
     }
@@ -178,7 +178,7 @@ export class BrainGraphPanel {
       font-weight: 700;
       font-size: 14px;
       margin-right: 8px;
-      color: #e0e0e0;
+      color: var(--vscode-editor-foreground, #e0e0e0);
     }
     .stat-chip {
       display: flex; align-items: center; gap: 4px;
@@ -344,7 +344,9 @@ export class BrainGraphPanel {
       position: absolute;
       top: 0; left: 0; right: 0; bottom: 0;
       display: flex; align-items: center; justify-content: center;
-      background: rgba(30,30,30,0.9); z-index: 30;
+      background: var(--vscode-editor-background, rgba(30,30,30,0.9));
+      opacity: 0.92;
+      z-index: 30;
       flex-direction: column; gap: 12px;
     }
     .spinner {
@@ -423,6 +425,34 @@ export class BrainGraphPanel {
   (function() {
     const vscode = acquireVsCodeApi();
     const CAN_WRITE = ${canWriteJs};
+
+    // --- Theme detection ---
+    function isDarkTheme() {
+      // VS Code sets body data attribute, or we can check computed background
+      const bg = getComputedStyle(document.body).backgroundColor;
+      if (bg) {
+        const m = bg.match(/\\d+/g);
+        if (m && m.length >= 3) {
+          const lum = (parseInt(m[0]) * 299 + parseInt(m[1]) * 587 + parseInt(m[2]) * 114) / 1000;
+          return lum < 128;
+        }
+      }
+      return true; // default to dark
+    }
+    const dark = isDarkTheme();
+
+    // Theme-aware colors
+    const theme = {
+      bg:              dark ? '#1e1e1e' : '#ffffff',
+      linkDefault:     dark ? 'rgba(160,170,180,0.45)' : 'rgba(80,90,100,0.35)',
+      linkHighlight:   dark ? 'rgba(144,202,249,0.7)' : 'rgba(30,120,220,0.6)',
+      linkDimmed:      dark ? 'rgba(100,100,100,0.08)' : 'rgba(160,160,160,0.1)',
+      nodeDimmed:      dark ? 'rgba(140,140,140,0.35)' : 'rgba(160,160,160,0.4)',
+      nodeHighlight:   dark ? '#ffffff' : '#111111',
+      neighborHighlight: dark ? '#90CAF9' : '#1976D2',
+      labelDefault:    dark ? 'rgba(220,220,220,0.85)' : 'rgba(30,30,30,0.85)',
+      labelHighlight:  dark ? '#ffffff' : '#000000',
+    };
 
     // --- Color palette ---
     const palette = [
@@ -627,6 +657,65 @@ export class BrainGraphPanel {
       });
     }
 
+    // --- Shared graph factory ---
+    function createGraph(el, nodes, links) {
+      const g = ForceGraph()(el)
+        .nodeId('id')
+        .nodeVal(node => Math.max(3, Math.sqrt(node.connectionCount + 1) * 4))
+        .nodeColor(node => {
+          if (highlightedNode) {
+            if (node === highlightedNode) return theme.nodeHighlight;
+            if (highlightedNeighbors.has(node.id)) return theme.neighborHighlight;
+            return theme.nodeDimmed;
+          }
+          return getTypeColor(node.neuronTypeId);
+        })
+        .nodeCanvasObjectMode(() => 'after')
+        .nodeCanvasObject((node, ctx, globalScale) => {
+          const fontSize = Math.max(10, 13 / globalScale);
+          let show = false;
+          if (node === highlightedNode || highlightedNeighbors.has(node.id)) show = true;
+          else if (globalScale > 1.5) show = true;
+          else if (node.connectionCount >= 5 && globalScale > 0.8) show = true;
+          if (!show) return;
+          if (fontSize / globalScale < 2) return;
+          ctx.font = fontSize + 'px Sans-Serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          const r = Math.max(3, Math.sqrt(node.connectionCount + 1) * 4);
+          ctx.fillStyle = node === highlightedNode ? theme.labelHighlight : theme.labelDefault;
+          ctx.fillText(node.label, node.x, node.y + r + fontSize * 0.8);
+        })
+        .linkColor(link => {
+          if (highlightedNode) {
+            const s = typeof link.source === 'object' ? link.source.id : link.source;
+            const t = typeof link.target === 'object' ? link.target.id : link.target;
+            if (s === highlightedNode.id || t === highlightedNode.id) return theme.linkHighlight;
+            return theme.linkDimmed;
+          }
+          return theme.linkDefault;
+        })
+        .linkWidth(1.5)
+        .linkDirectionalArrowLength(4)
+        .linkDirectionalArrowRelPos(1)
+        .backgroundColor(theme.bg)
+        .onNodeHover(node => {
+          highlightedNode = node || null;
+          highlightedNeighbors = new Set();
+          if (node) {
+            const n = adjacencyMap.get(node.id);
+            if (n) highlightedNeighbors = n;
+          }
+          el.style.cursor = node ? 'pointer' : 'default';
+        })
+        .onNodeClick(node => { showNodePopup(node); })
+        .graphData({ nodes, links });
+
+      g.d3Force('charge')?.strength(-200);
+      g.d3Force('link')?.distance(80);
+      return g;
+    }
+
     // --- Build adjacency map ---
     function buildAdjacency(synapses) {
       adjacencyMap.clear();
@@ -682,60 +771,7 @@ export class BrainGraphPanel {
 
       if (graphInstance) { graphInstance._destructor?.(); }
 
-      graphInstance = ForceGraph()(container)
-        .nodeId('id')
-        .nodeVal(node => Math.max(3, Math.sqrt(node.connectionCount + 1) * 4))
-        .nodeColor(node => {
-          if (highlightedNode) {
-            if (node === highlightedNode) return '#fff';
-            if (highlightedNeighbors.has(node.id)) return '#90CAF9';
-            return 'rgba(100,100,100,0.15)';
-          }
-          return getTypeColor(node.neuronTypeId);
-        })
-        .nodeCanvasObjectMode(() => 'after')
-        .nodeCanvasObject((node, ctx, globalScale) => {
-          const fontSize = Math.max(10, 13 / globalScale);
-          let show = false;
-          if (node === highlightedNode || highlightedNeighbors.has(node.id)) show = true;
-          else if (globalScale > 1.5) show = true;
-          else if (node.connectionCount >= 5 && globalScale > 0.8) show = true;
-          if (!show) return;
-          if (fontSize / globalScale < 2) return;
-          ctx.font = fontSize + 'px Sans-Serif';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          const r = Math.max(3, Math.sqrt(node.connectionCount + 1) * 4);
-          ctx.fillStyle = node === highlightedNode ? '#fff' : 'rgba(220,220,220,0.85)';
-          ctx.fillText(node.label, node.x, node.y + r + fontSize * 0.8);
-        })
-        .linkColor(link => {
-          if (highlightedNode) {
-            const s = typeof link.source === 'object' ? link.source.id : link.source;
-            const t = typeof link.target === 'object' ? link.target.id : link.target;
-            if (s === highlightedNode.id || t === highlightedNode.id) return 'rgba(144,202,249,0.6)';
-            return 'rgba(100,100,100,0.03)';
-          }
-          return 'rgba(128,128,128,0.18)';
-        })
-        .linkWidth(1)
-        .linkDirectionalArrowLength(4)
-        .linkDirectionalArrowRelPos(1)
-        .backgroundColor('#1e1e1e')
-        .onNodeHover(node => {
-          highlightedNode = node || null;
-          highlightedNeighbors = new Set();
-          if (node) {
-            const n = adjacencyMap.get(node.id);
-            if (n) highlightedNeighbors = n;
-          }
-          container.style.cursor = node ? 'pointer' : 'default';
-        })
-        .onNodeClick(node => { showNodePopup(node); })
-        .graphData({ nodes, links });
-
-      graphInstance.d3Force('charge')?.strength(-200);
-      graphInstance.d3Force('link')?.distance(80);
+      graphInstance = createGraph(container, nodes, links);
 
       setTimeout(() => {
         if (graphInstance) graphInstance.zoomToFit(400, 40);
@@ -768,60 +804,7 @@ export class BrainGraphPanel {
 
       if (!graphInstance && nodes.length > 0) {
         // First render — create the graph
-        graphInstance = ForceGraph()(container)
-          .nodeId('id')
-          .nodeVal(node => Math.max(3, Math.sqrt(node.connectionCount + 1) * 4))
-          .nodeColor(node => {
-            if (highlightedNode) {
-              if (node === highlightedNode) return '#fff';
-              if (highlightedNeighbors.has(node.id)) return '#90CAF9';
-              return 'rgba(100,100,100,0.15)';
-            }
-            return getTypeColor(node.neuronTypeId);
-          })
-          .nodeCanvasObjectMode(() => 'after')
-          .nodeCanvasObject((node, ctx, globalScale) => {
-            const fontSize = Math.max(10, 13 / globalScale);
-            let show = false;
-            if (node === highlightedNode || highlightedNeighbors.has(node.id)) show = true;
-            else if (globalScale > 1.5) show = true;
-            else if (node.connectionCount >= 5 && globalScale > 0.8) show = true;
-            if (!show) return;
-            if (fontSize / globalScale < 2) return;
-            ctx.font = fontSize + 'px Sans-Serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            const r = Math.max(3, Math.sqrt(node.connectionCount + 1) * 4);
-            ctx.fillStyle = node === highlightedNode ? '#fff' : 'rgba(220,220,220,0.85)';
-            ctx.fillText(node.label, node.x, node.y + r + fontSize * 0.8);
-          })
-          .linkColor(link => {
-            if (highlightedNode) {
-              const s = typeof link.source === 'object' ? link.source.id : link.source;
-              const t = typeof link.target === 'object' ? link.target.id : link.target;
-              if (s === highlightedNode.id || t === highlightedNode.id) return 'rgba(144,202,249,0.6)';
-              return 'rgba(100,100,100,0.03)';
-            }
-            return 'rgba(128,128,128,0.18)';
-          })
-          .linkWidth(1)
-          .linkDirectionalArrowLength(4)
-          .linkDirectionalArrowRelPos(1)
-          .backgroundColor('#1e1e1e')
-          .onNodeHover(node => {
-            highlightedNode = node || null;
-            highlightedNeighbors = new Set();
-            if (node) {
-              const n = adjacencyMap.get(node.id);
-              if (n) highlightedNeighbors = n;
-            }
-            container.style.cursor = node ? 'pointer' : 'default';
-          })
-          .onNodeClick(node => { showNodePopup(node); })
-          .graphData({ nodes, links });
-
-        graphInstance.d3Force('charge')?.strength(-200);
-        graphInstance.d3Force('link')?.distance(80);
+        graphInstance = createGraph(container, nodes, links);
       } else if (graphInstance) {
         // Update existing graph with new data
         graphInstance.graphData({ nodes, links });
