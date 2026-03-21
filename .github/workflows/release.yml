@@ -30,18 +30,31 @@ jobs:
           node esbuild.js --mode=euprod --production
           cd webview-ui && npm run build -- --mode euprod
 
+      - name: Detect pre-release
+        id: prerelease
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if echo "$VERSION" | grep -qE '(alpha|beta|rc)'; then
+            echo "flag=--pre-release" >> $GITHUB_OUTPUT
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+          else
+            echo "flag=" >> $GITHUB_OUTPUT
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Publish to VS Code Marketplace
-        run: npx @vscode/vsce publish --no-dependencies
+        run: npx @vscode/vsce publish --no-dependencies ${{ steps.prerelease.outputs.flag }}
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
 
       - name: Package VSIX for GitHub Release
-        run: npx @vscode/vsce package --no-dependencies
+        run: npx @vscode/vsce package --no-dependencies ${{ steps.prerelease.outputs.flag }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: "*.vsix"
           generate_release_notes: true
+          prerelease: ${{ steps.prerelease.outputs.is_prerelease == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

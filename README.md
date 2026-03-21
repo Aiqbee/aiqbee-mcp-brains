@@ -13,7 +13,7 @@
 <p align="center">
   <strong>Connect your AI coding assistant to a shared knowledge brain — instantly.</strong><br/>
   One-click MCP connections for Claude Code, Cursor, Windsurf, and any MCP-compatible tool.<br/><br/>
-  <em>Public Beta — we'd love your feedback! <a href="https://github.com/aiqbee/aiqbee-mcp-brains/issues">Report issues</a></em>
+  <em>🚧 Public Beta — we'd love your feedback! <a href="https://github.com/aiqbee/aiqbee-mcp-brains/issues">Report issues</a></em>
 </p>
 
 <p align="center">
