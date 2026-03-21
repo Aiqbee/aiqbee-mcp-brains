@@ -7,6 +7,8 @@ import { NeuronService } from '../api/neuron-service.js';
 import { addMcpConnection } from '../mcp/mcp-config.js';
 import type { WebviewMessage } from '../api/types.js';
 
+const log = vscode.window.createOutputChannel('Aiqbee Sidebar');
+
 export class SidebarProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'aiqbee.brainManagerView';
   private view?: vscode.WebviewView;
@@ -88,23 +90,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
         case 'listBrains': {
           this.postMessage({ command: 'loading', payload: { loading: true, command: 'listBrains' } });
+          log.appendLine('Fetching brains...');
           const brains = await this.brainService.listBrains();
+          log.appendLine(`Got ${Array.isArray(brains) ? brains.length : typeof brains} brains`);
           this.postMessage({ command: 'brainsLoaded', payload: brains });
           this.postMessage({ command: 'loading', payload: { loading: false, command: 'listBrains' } });
-
-          // Fetch counts for all brains in parallel
-          const countPromises = brains.map(async (brain) => {
-            try {
-              const counts = await this.neuronService.getBrainCounts(brain.id);
-              this.postMessage({
-                command: 'brainCounts',
-                payload: { brainId: brain.id, counts },
-              });
-            } catch {
-              // Silently skip count errors for individual brains
-            }
-          });
-          await Promise.all(countPromises);
           break;
         }
 
