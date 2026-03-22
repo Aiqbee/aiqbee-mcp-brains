@@ -18,6 +18,7 @@ interface HiveDiscoveryResponse {
 }
 
 const STORAGE_KEY = 'aiqbee-connection';
+const SUPPORTED_AUTH_PROVIDERS = ['entra', 'google', 'email'];
 
 export class ConnectionManager {
   private _onConnectionChanged = new vscode.EventEmitter<Connection>();
@@ -109,11 +110,14 @@ export class ConnectionManager {
       throw new Error('The server did not identify as a Hive Server.');
     }
 
-    if (!data.authProviders || data.authProviders.length === 0) {
-      throw new Error('Hive Server has no authentication providers configured.');
+    const supported = (data.authProviders || []).filter(
+      (p: string) => SUPPORTED_AUTH_PROVIDERS.includes(p),
+    );
+    if (supported.length === 0) {
+      throw new Error('Hive Server has no supported authentication providers configured.');
     }
 
-    return data;
+    return { ...data, authProviders: supported };
   }
 
   dispose(): void {
@@ -133,10 +137,16 @@ function normaliseUrl(input: string): string {
   }
 
   // Validate it's a real URL
+  let parsed: URL;
   try {
-    new URL(url);
+    parsed = new URL(url);
   } catch {
     throw new Error(`Invalid URL: ${input}`);
+  }
+
+  const isLocalhost = ['localhost', '127.0.0.1', '::1'].includes(parsed.hostname);
+  if (parsed.protocol !== 'https:' && !isLocalhost) {
+    throw new Error('Hive Server URL must use HTTPS unless it is localhost');
   }
 
   return url;

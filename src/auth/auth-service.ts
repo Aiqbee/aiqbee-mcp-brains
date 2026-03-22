@@ -31,6 +31,10 @@ function generatePKCE(): { verifier: string; challenge: string } {
 
 const SUCCESS_HTML = '<html><body><h3>Sign-in successful!</h3><p>You can close this tab and return to VS Code.</p><script>window.close()</script></body></html>';
 
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 /**
  * Start a temporary localhost HTTP server that listens for a single callback
  * on the given path. The `extractResult` function parses the query parameters
@@ -59,7 +63,7 @@ function startCallbackServer<T>(
           resolveResult(result);
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
-          res.end(`<html><body><h3>Sign-in failed</h3><p>${message}</p></body></html>`);
+          res.end(`<html><body><h3>Sign-in failed</h3><p>${escapeHtml(message)}</p></body></html>`);
           rejectResult(err instanceof Error ? err : new Error(message));
         }
       } else {
@@ -83,10 +87,14 @@ function startCallbackServer<T>(
 }
 
 /** Start a localhost server to capture an OAuth authorization code */
-function startCodeServer(redirectPath: string) {
+function startCodeServer(redirectPath: string, expectedState: string) {
   return startCallbackServer<string>(
     redirectPath,
     (params) => {
+      const state = params.get('state');
+      if (state !== expectedState) {
+        throw new Error('OAuth state mismatch — possible CSRF attack');
+      }
       const code = params.get('code');
       if (code) {
         return code;
@@ -168,7 +176,7 @@ export class AuthService {
     const state = crypto.randomBytes(16).toString('hex');
 
     // Start localhost redirect server
-    const { port, resultPromise: codePromise, close } = await startCodeServer('/oauth/callback');
+    const { port, resultPromise: codePromise, close } = await startCodeServer('/oauth/callback', state);
     const redirectUri = `http://localhost:${port}/oauth/callback`;
 
     try {

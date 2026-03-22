@@ -33,7 +33,11 @@ describe('ConnectionManager', () => {
     manager.dispose();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
-    process.env.VITE_API_URL = originalViteApiUrl;
+    if (originalViteApiUrl === undefined) {
+      delete process.env.VITE_API_URL;
+    } else {
+      process.env.VITE_API_URL = originalViteApiUrl;
+    }
   });
 
   describe('getConnection', () => {
@@ -146,12 +150,62 @@ describe('ConnectionManager', () => {
       }));
 
       await expect(manager.connectToHive('hive.example.com'))
-        .rejects.toThrow(/no authentication providers/);
+        .rejects.toThrow(/no supported authentication providers/);
     });
 
     it('throws on invalid URL', async () => {
       await expect(manager.connectToHive('not a valid url!!!'))
         .rejects.toThrow(/Invalid URL/);
+    });
+
+    it('rejects non-HTTPS URLs for remote hosts', async () => {
+      await expect(manager.connectToHive('http://hive.company.com'))
+        .rejects.toThrow(/must use HTTPS/);
+    });
+
+    it('allows HTTP for localhost', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          backendType: 'hive',
+          version: '1.0.0',
+          authProviders: ['entra'],
+          mcpBaseUrl: 'http://localhost:8080',
+        }),
+      }));
+
+      const conn = await manager.connectToHive('http://localhost:8080');
+      expect(conn.baseUrl).toBe('http://localhost:8080');
+    });
+
+    it('filters auth providers to supported set', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          backendType: 'hive',
+          version: '1.0.0',
+          authProviders: ['entra', 'github', 'saml'],
+          mcpBaseUrl: 'https://hive.example.com',
+        }),
+      }));
+
+      const conn = await manager.connectToHive('hive.example.com');
+      expect(conn.authProviders).toEqual(['entra']);
+    });
+
+    it('throws when no supported auth providers after filtering', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          backendType: 'hive',
+          version: '1.0.0',
+          authProviders: ['github', 'saml'],
+          mcpBaseUrl: 'https://hive.example.com',
+        }),
+      }));
+
+      await expect(manager.connectToHive('hive.example.com'))
+        .rejects.toThrow(/no supported authentication providers/);
     });
 
     it('fires onConnectionChanged event', async () => {

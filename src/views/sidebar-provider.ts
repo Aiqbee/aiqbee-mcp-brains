@@ -138,6 +138,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         case 'connectToHive': {
           this.postMessage({ command: 'loading', payload: { loading: true, command: 'connectToHive' } });
           const conn = await this.connectionManager.connectToHive(message.payload.url);
+          await this.authService.signOut();
           this.postMessage({
             command: 'connectionChanged',
             payload: {
