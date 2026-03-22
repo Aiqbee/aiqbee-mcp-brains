@@ -29,6 +29,7 @@ function generatePKCE(): { verifier: string; challenge: string } {
   return { verifier, challenge };
 }
 
+const LOOPBACK_HOST = '127.0.0.1';
 const SUCCESS_HTML = '<html><body><h3>Sign-in successful!</h3><p>You can close this tab and return to VS Code.</p><script>window.close()</script></body></html>';
 
 function escapeHtml(text: string): string {
@@ -72,7 +73,7 @@ function startCallbackServer<T>(
       }
     });
 
-    server.listen(0, '127.0.0.1', () => {
+    server.listen(0, LOOPBACK_HOST, () => {
       const addr = server.address();
       const port = typeof addr === 'object' && addr ? addr.port : 0;
       resolveSetup({ port, resultPromise, close: () => server.close() });
@@ -114,10 +115,14 @@ interface HiveTokenResult {
 }
 
 /** Start a localhost server to capture hive-server brokered auth tokens */
-function startHiveTokenServer() {
+function startHiveTokenServer(expectedState: string) {
   return startCallbackServer<HiveTokenResult>(
     '/oauth/callback',
     (params) => {
+      const state = params.get('state');
+      if (state !== expectedState) {
+        throw new Error('OAuth state mismatch — possible CSRF attack');
+      }
       const token = params.get('token');
       if (token) {
         return {
@@ -177,7 +182,7 @@ export class AuthService {
 
     // Start localhost redirect server
     const { port, resultPromise: codePromise, close } = await startCodeServer('/oauth/callback', state);
-    const redirectUri = `http://localhost:${port}/oauth/callback`;
+    const redirectUri = `http://${LOOPBACK_HOST}:${port}/oauth/callback`;
 
     try {
       // Build Entra authorization URL
@@ -387,11 +392,15 @@ export class AuthService {
    */
   private async signInViaHiveServer(provider: 'entra' | 'google'): Promise<void> {
     const conn = this.connectionManager.getConnection();
-    const { port, resultPromise: tokenPromise, close } = await startHiveTokenServer();
+    const state = crypto.randomBytes(16).toString('hex');
+    const { port, resultPromise: tokenPromise, close } = await startHiveTokenServer(state);
 
     try {
-      const loginUrl = `${conn.baseUrl}/api/vscode/auth/login?redirect_port=${port}&provider=${provider}`;
-      await vscode.env.openExternal(vscode.Uri.parse(loginUrl));
+      const loginUrl = new URL('/api/vscode/auth/login', conn.baseUrl);
+      loginUrl.searchParams.set('redirect_port', String(port));
+      loginUrl.searchParams.set('provider', provider);
+      loginUrl.searchParams.set('state', state);
+      await vscode.env.openExternal(vscode.Uri.parse(loginUrl.toString()));
 
       const result = await tokenPromise;
 
