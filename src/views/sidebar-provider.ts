@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import type { ConnectionManager } from '../connection/connection.js';
 import { AuthService } from '../auth/auth-service.js';
 import { BrainService } from '../api/brain-service.js';
 import { NeuronService } from '../api/neuron-service.js';
@@ -15,6 +16,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
   constructor(
     private readonly extensionUri: vscode.Uri,
+    private readonly connectionManager: ConnectionManager,
     private readonly authService: AuthService,
     private readonly brainService: BrainService,
     private readonly neuronService: NeuronService,
@@ -54,6 +56,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         case 'getAuthState': {
           const state = await this.authService.initialize();
           this.postMessage({ command: 'authStateChanged', payload: state });
+          const currentConn = this.connectionManager.getConnection();
+          this.postMessage({
+            command: 'connectionChanged',
+            payload: {
+              backendType: currentConn.backendType,
+              label: currentConn.label,
+              authProviders: currentConn.authProviders,
+            },
+          });
           break;
         }
 
@@ -124,8 +135,39 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           break;
         }
 
+        case 'connectToHive': {
+          this.postMessage({ command: 'loading', payload: { loading: true, command: 'connectToHive' } });
+          const conn = await this.connectionManager.connectToHive(message.payload.url);
+          this.postMessage({
+            command: 'connectionChanged',
+            payload: {
+              backendType: conn.backendType,
+              label: conn.label,
+              authProviders: conn.authProviders,
+            },
+          });
+          this.postMessage({ command: 'loading', payload: { loading: false, command: 'connectToHive' } });
+          break;
+        }
+
+        case 'disconnectHive': {
+          await this.connectionManager.connectToCloud();
+          await this.authService.signOut();
+          const cloudConn = this.connectionManager.getConnection();
+          this.postMessage({
+            command: 'connectionChanged',
+            payload: {
+              backendType: cloudConn.backendType,
+              label: cloudConn.label,
+              authProviders: cloudConn.authProviders,
+            },
+          });
+          break;
+        }
+
         case 'addMcpConnection': {
-          await addMcpConnection(message.payload.brainId, message.payload.brainName);
+          const mcpBaseUrl = this.connectionManager.getConnection().mcpBaseUrl;
+          await addMcpConnection(message.payload.brainId, message.payload.brainName, mcpBaseUrl);
           break;
         }
 

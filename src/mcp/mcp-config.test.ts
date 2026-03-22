@@ -137,6 +137,47 @@ describe('addMcpConnection', () => {
     expect(parsed.mcpServers['Aiqbee Brain: Dev Brain']).toBeDefined();
   });
 
+  it('uses provided mcpBaseUrl instead of deriving from env', async () => {
+    (vscode.workspace as any).workspaceFolders = [
+      { uri: { fsPath: '/workspace' } },
+    ];
+    vi.spyOn(vscode.window, 'showQuickPick' as any).mockResolvedValue({
+      label: '.mcp.json',
+      configPath: '/workspace/.mcp.json',
+      serverKey: 'mcpServers',
+    });
+    mockReadFile.mockRejectedValueOnce(new Error('ENOENT'));
+
+    await addMcpConnection('brain-hive', 'Hive Brain', 'https://hive.company.com');
+
+    const [, content] = mockWriteFile.mock.calls[0];
+    const parsed = JSON.parse(content);
+    expect(parsed.mcpServers['Aiqbee Brain: Hive Brain']).toEqual({
+      type: 'http',
+      url: 'https://hive.company.com/brain/brain-hive/mcp',
+    });
+  });
+
+  it('strips trailing slash from provided mcpBaseUrl', async () => {
+    (vscode.workspace as any).workspaceFolders = [
+      { uri: { fsPath: '/workspace' } },
+    ];
+    vi.spyOn(vscode.window, 'showQuickPick' as any).mockResolvedValue({
+      label: '.mcp.json',
+      configPath: '/workspace/.mcp.json',
+      serverKey: 'mcpServers',
+    });
+    mockReadFile.mockRejectedValueOnce(new Error('ENOENT'));
+
+    await addMcpConnection('brain-1', 'Test', 'https://hive.company.com/');
+
+    const [, content] = mockWriteFile.mock.calls[0];
+    const parsed = JSON.parse(content);
+    expect(parsed.mcpServers['Aiqbee Brain: Test'].url).toBe(
+      'https://hive.company.com/brain/brain-1/mcp',
+    );
+  });
+
   it('shows error message on write failure', async () => {
     (vscode.workspace as any).workspaceFolders = [
       { uri: { fsPath: '/workspace' } },

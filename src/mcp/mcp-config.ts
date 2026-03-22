@@ -23,7 +23,7 @@ interface ConfigTarget {
   serverKey: 'mcpServers' | 'servers';
 }
 
-export async function addMcpConnection(brainId: string, brainName: string): Promise<void> {
+export async function addMcpConnection(brainId: string, brainName: string, mcpBaseUrl?: string): Promise<void> {
   const workspaceFolders = vscode.workspace.workspaceFolders;
   if (!workspaceFolders || workspaceFolders.length === 0) {
     vscode.window.showWarningMessage(
@@ -75,13 +75,18 @@ export async function addMcpConnection(brainId: string, brainName: string): Prom
 
   const configPath = target.configPath;
   const entryName = `Aiqbee Brain: ${brainName}`;
-  const apiUrl = process.env.VITE_API_URL || 'https://api.aiqbee.com';
-  const baseUrl = new URL(apiUrl);
-  baseUrl.hostname = baseUrl.hostname.replace(/^api\./, 'mcp.');
-  const mcpBaseUrl = baseUrl.toString().replace(/\/$/, '');
+  let resolvedMcpBaseUrl: string;
+  if (mcpBaseUrl) {
+    resolvedMcpBaseUrl = mcpBaseUrl.replace(/\/$/, '');
+  } else {
+    const apiUrl = process.env.VITE_API_URL || 'https://api.aiqbee.com';
+    const baseUrl = new URL(apiUrl);
+    baseUrl.hostname = baseUrl.hostname.replace(/^api\./, 'mcp.');
+    resolvedMcpBaseUrl = baseUrl.toString().replace(/\/$/, '');
+  }
   const serverEntry: McpServerEntry = {
     type: 'http',
-    url: `${mcpBaseUrl}/brain/${encodeURIComponent(brainId)}/mcp`,
+    url: `${resolvedMcpBaseUrl}/brain/${encodeURIComponent(brainId)}/mcp`,
   };
 
   try {
