@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { ApiClient, ApiRequestError } from './api-client.js';
 import { TokenStorage } from '../auth/token-storage.js';
+import type { ConnectionManager } from '../connection/connection.js';
 
 function createMockTokenStorage(token?: string): TokenStorage {
   return {
@@ -15,6 +16,19 @@ function createMockTokenStorage(token?: string): TokenStorage {
     clear: vi.fn(),
     hasTokens: vi.fn().mockResolvedValue(!!token),
   } as unknown as TokenStorage;
+}
+
+function createMockConnectionManager(): ConnectionManager {
+  return {
+    getConnection: vi.fn().mockReturnValue({
+      backendType: 'cloud',
+      baseUrl: 'https://api.aiqbee.com',
+      mcpBaseUrl: 'https://mcp.aiqbee.com',
+      authProviders: ['entra', 'google', 'email'],
+      label: 'Aiqbee Cloud',
+    }),
+    isHive: vi.fn().mockReturnValue(false),
+  } as unknown as ConnectionManager;
 }
 
 function mockFetch(response: Partial<Response>) {
@@ -37,7 +51,7 @@ describe('ApiClient', () => {
 
   beforeEach(() => {
     tokenStorage = createMockTokenStorage('test-token');
-    client = new ApiClient(tokenStorage);
+    client = new ApiClient(tokenStorage, createMockConnectionManager());
   });
 
   afterEach(() => {
@@ -63,7 +77,7 @@ describe('ApiClient', () => {
 
     it('sends GET without auth when no token', async () => {
       tokenStorage = createMockTokenStorage(undefined);
-      client = new ApiClient(tokenStorage);
+      client = new ApiClient(tokenStorage, createMockConnectionManager());
 
       const fetchMock = mockFetch({
         json: async () => ({}),

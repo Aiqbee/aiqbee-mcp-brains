@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { ConnectionManager } from './connection/connection.js';
 import { TokenStorage } from './auth/token-storage.js';
 import { AuthService } from './auth/auth-service.js';
 import { ApiClient } from './api/api-client.js';
@@ -9,9 +10,10 @@ import { BrainGraphPanel } from './views/brain-graph-panel.js';
 
 export function activate(context: vscode.ExtensionContext): void {
   // Core services
+  const connectionManager = new ConnectionManager(context.globalState);
   const tokenStorage = new TokenStorage(context.secrets);
-  const apiClient = new ApiClient(tokenStorage);
-  const authService = new AuthService(tokenStorage, apiClient);
+  const apiClient = new ApiClient(tokenStorage, connectionManager);
+  const authService = new AuthService(tokenStorage, apiClient, connectionManager);
   const brainService = new BrainService(apiClient);
   const neuronService = new NeuronService(apiClient);
 
@@ -21,6 +23,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // Register sidebar webview provider
   const sidebarProvider = new SidebarProvider(
     context.extensionUri,
+    connectionManager,
     authService,
     brainService,
     neuronService,
@@ -77,7 +80,10 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Cleanup
   context.subscriptions.push({
-    dispose: () => authService.dispose(),
+    dispose: () => {
+      authService.dispose();
+      connectionManager.dispose();
+    },
   });
 }
 

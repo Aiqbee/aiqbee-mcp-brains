@@ -21,6 +21,9 @@ interface AppState {
   loading: boolean;
   error?: string;
   verificationEmail?: string;
+  backendType: 'cloud' | 'hive';
+  hiveLabel?: string;
+  authProviders: string[];
 }
 
 type AppAction =
@@ -29,7 +32,8 @@ type AppAction =
   | { type: 'SET_LOADING'; loading: boolean }
   | { type: 'SET_ERROR'; error: string }
   | { type: 'CLEAR_ERROR' }
-  | { type: 'EMAIL_VERIFICATION_REQUIRED'; email: string };
+  | { type: 'EMAIL_VERIFICATION_REQUIRED'; email: string }
+  | { type: 'CONNECTION_CHANGED'; backendType: 'cloud' | 'hive'; label: string; authProviders: string[] };
 
 function reducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
@@ -53,6 +57,14 @@ function reducer(state: AppState, action: AppAction): AppState {
       return { ...state, error: undefined };
     case 'EMAIL_VERIFICATION_REQUIRED':
       return { ...state, verificationEmail: action.email, loading: false };
+    case 'CONNECTION_CHANGED':
+      return {
+        ...state,
+        backendType: action.backendType,
+        hiveLabel: action.backendType === 'hive' ? action.label : undefined,
+        authProviders: action.authProviders,
+        error: undefined,
+      };
     default:
       return state;
   }
@@ -66,6 +78,8 @@ export default function App() {
     page: 'login',
     authenticated: false,
     loading: true,
+    backendType: 'cloud',
+    authProviders: ['entra', 'google', 'email'],
   });
   const [activeTab, setActiveTab] = useState<Tab>('brains');
 
@@ -93,6 +107,14 @@ export default function App() {
           break;
         case 'emailVerificationRequired':
           dispatch({ type: 'EMAIL_VERIFICATION_REQUIRED', email: message.payload.email });
+          break;
+        case 'connectionChanged':
+          dispatch({
+            type: 'CONNECTION_CHANGED',
+            backendType: message.payload.backendType,
+            label: message.payload.label,
+            authProviders: message.payload.authProviders,
+          });
           break;
       }
     }, []),
@@ -124,12 +146,17 @@ export default function App() {
         loading={state.loading}
         error={state.error}
         environment={state.environment}
+        backendType={state.backendType}
+        hiveLabel={state.hiveLabel}
+        authProviders={state.authProviders}
         onSignInMicrosoft={() => postMessage({ command: 'signInMicrosoft' })}
         onSignInGoogle={() => postMessage({ command: 'signInGoogle' })}
         onSignInEmail={(email, password) =>
           postMessage({ command: 'signInEmail', payload: { email, password } })
         }
         onCreateAccount={goToSignUp}
+        onConnectToHive={(url) => postMessage({ command: 'connectToHive', payload: { url } })}
+        onDisconnectHive={() => postMessage({ command: 'disconnectHive' })}
       />
       </>
     );
@@ -155,6 +182,11 @@ export default function App() {
   // Authenticated: show tab bar + content
   return (
     <div className="app-shell">
+      {state.backendType === 'hive' && state.hiveLabel && (
+        <div className="hive-banner">
+          {state.hiveLabel}
+        </div>
+      )}
       <div className="tab-bar">
         <button
           type="button"
