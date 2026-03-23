@@ -78,9 +78,23 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
+  // Proactive token refresh — run every 15 minutes to keep the session alive
+  const REFRESH_INTERVAL_MS = 15 * 60 * 1000;
+  const refreshTimer = setInterval(async () => {
+    try {
+      const state = await authService.initialize();
+      if (state.authenticated) {
+        await authService.refreshToken();
+      }
+    } catch {
+      // Refresh failed silently — the next API call will trigger 401 handling
+    }
+  }, REFRESH_INTERVAL_MS);
+
   // Cleanup
   context.subscriptions.push({
     dispose: () => {
+      clearInterval(refreshTimer);
       authService.dispose();
       connectionManager.dispose();
     },

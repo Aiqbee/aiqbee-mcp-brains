@@ -6,6 +6,7 @@ import { AuthService } from '../auth/auth-service.js';
 import { BrainService } from '../api/brain-service.js';
 import { NeuronService } from '../api/neuron-service.js';
 import { addMcpConnection } from '../mcp/mcp-config.js';
+import { ApiRequestError } from '../api/api-client.js';
 import type { WebviewMessage } from '../api/types.js';
 
 const log = vscode.window.createOutputChannel('Aiqbee Sidebar');
@@ -184,6 +185,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
+
+      // If the API returned 401 after refresh failed, sign out so the
+      // webview redirects to the login page instead of showing an error.
+      if (err instanceof ApiRequestError && err.status === 401) {
+        log.appendLine('Session expired — signing out');
+        await this.authService.signOut();
+        return;
+      }
+
       this.postMessage({
         command: 'error',
         payload: { message: errorMessage, command: message.command },
