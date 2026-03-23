@@ -50,6 +50,8 @@ export function activate(context: vscode.ExtensionContext): void {
           if (accessToken) {
             authService.handleGoogleCallback(accessToken).catch((err) => {
               vscode.window.showErrorMessage(`Google sign-in failed: ${err instanceof Error ? err.message : String(err)}`);
+              // Fire auth state to clear loading spinner in sidebar
+              authService.fireAuthStateChanged(false);
             });
           }
         }

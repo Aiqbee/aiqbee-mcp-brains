@@ -166,6 +166,11 @@ export class AuthService {
   readonly onAuthStateChanged = this._onAuthStateChanged.event;
   private pendingCancel: (() => void) | null = null;
 
+  /** Emit auth state change externally (e.g. to clear loading on Google callback error) */
+  fireAuthStateChanged(authenticated: boolean, user?: UserDto): void {
+    this._onAuthStateChanged.fire({ authenticated, user, environment: this.getEnvironment() });
+  }
+
   constructor(
     private readonly tokenStorage: TokenStorage,
     private readonly apiClient: ApiClient,
