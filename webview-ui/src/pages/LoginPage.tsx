@@ -11,6 +11,11 @@ interface LoginPageProps {
   onSignInGoogle: () => void;
   onSignInEmail: (email: string, password: string) => void;
   onCreateAccount: () => void;
+  authActionState?: string;
+  authActionMessage?: string;
+  authActionWebAppUrl?: string;
+  onClearAuthAction: () => void;
+  onOpenExternal: (url: string) => void;
   onConnectToHive: (url: string) => void;
   onDisconnectHive: () => void;
 }
@@ -26,6 +31,11 @@ export function LoginPage({
   onSignInGoogle,
   onSignInEmail,
   onCreateAccount,
+  authActionState,
+  authActionMessage,
+  authActionWebAppUrl,
+  onClearAuthAction,
+  onOpenExternal,
   onConnectToHive,
   onDisconnectHive,
 }: LoginPageProps) {
@@ -83,7 +93,32 @@ export function LoginPage({
 
       {error && <div className="error-message">{error}</div>}
 
-      {!isHive && (
+      {authActionState && (
+        <div className="auth-action-banner">
+          <div>{authActionMessage}</div>
+          {authActionState === 'SignUpRequired' && authActionWebAppUrl && (
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => {
+                onClearAuthAction();
+                onOpenExternal(authActionWebAppUrl);
+              }}
+            >
+              Open Aiqbee Web App to Sign Up
+            </button>
+          )}
+          <button
+            type="button"
+            className="link"
+            onClick={onClearAuthAction}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {!isHive && !authActionState && (
         <div className="auth-info">
           Already have a Microsoft or Google work account? Sign in directly — your Aiqbee account will be created automatically on first sign-in.
         </div>

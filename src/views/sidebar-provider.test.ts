@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { SidebarProvider } from './sidebar-provider.js';
 import { ApiRequestError } from '../api/api-client.js';
+import { AuthStateError } from '../auth/auth-service.js';
 import type { AuthService } from '../auth/auth-service.js';
 import type { BrainService } from '../api/brain-service.js';
 import type { NeuronService } from '../api/neuron-service.js';
@@ -192,6 +193,77 @@ describe('SidebarProvider', () => {
       expect(authService.signOut).toHaveBeenCalledOnce();
       const connMsg = postedMessages.find((m) => m.command === 'connectionChanged');
       expect(connMsg.payload.backendType).toBe('cloud');
+    });
+  });
+
+  describe('auth state errors', () => {
+    it('sends authActionRequired for SignUpRequired', async () => {
+      (authService.signInWithMicrosoft as any).mockRejectedValue(
+        new AuthStateError('No account found.', 'SignUpRequired'),
+      );
+
+      const handler = getMessageHandler(provider);
+      await handler({ command: 'signInMicrosoft' });
+
+      const actionMsg = postedMessages.find((m) => m.command === 'authActionRequired');
+      expect(actionMsg).toBeDefined();
+      expect(actionMsg.payload.state).toBe('SignUpRequired');
+      expect(actionMsg.payload.webAppUrl).toBeDefined();
+      // Should NOT send a generic error
+      expect(postedMessages.filter((m) => m.command === 'error')).toHaveLength(0);
+    });
+
+    it('sends authActionRequired for PendingApproval', async () => {
+      (authService.signInWithMicrosoft as any).mockRejectedValue(
+        new AuthStateError('Pending approval.', 'PendingApproval'),
+      );
+
+      const handler = getMessageHandler(provider);
+      await handler({ command: 'signInMicrosoft' });
+
+      const actionMsg = postedMessages.find((m) => m.command === 'authActionRequired');
+      expect(actionMsg).toBeDefined();
+      expect(actionMsg.payload.state).toBe('PendingApproval');
+    });
+  });
+
+  describe('subscription limit errors', () => {
+    it('sends subscriptionLimitReached for MAX_BRAINS_EXCEEDED', async () => {
+      const body = JSON.stringify({
+        errorCode: 'MAX_BRAINS_EXCEEDED',
+        message: 'Upgrade your subscription',
+        currentCount: 20,
+        maxAllowed: 20,
+      });
+      (brainService.createBrain as any).mockRejectedValue(
+        new ApiRequestError('Bad Request', 400, body),
+      );
+
+      const handler = getMessageHandler(provider);
+      await handler({ command: 'createBrain', payload: { name: 'Test' } });
+
+      const limitMsg = postedMessages.find((m) => m.command === 'subscriptionLimitReached');
+      expect(limitMsg).toBeDefined();
+      expect(limitMsg.payload.errorCode).toBe('MAX_BRAINS_EXCEEDED');
+      expect(limitMsg.payload.currentCount).toBe(20);
+      expect(limitMsg.payload.maxAllowed).toBe(20);
+      expect(limitMsg.payload.isHive).toBe(false);
+      // Should NOT send a generic error
+      expect(postedMessages.filter((m) => m.command === 'error')).toHaveLength(0);
+    });
+
+    it('sends generic error for non-limit 400 errors', async () => {
+      (brainService.createBrain as any).mockRejectedValue(
+        new ApiRequestError('Validation failed', 400, '{"errors":["name required"]}'),
+      );
+
+      const handler = getMessageHandler(provider);
+      await handler({ command: 'createBrain', payload: { name: '' } });
+
+      const limitMsg = postedMessages.find((m) => m.command === 'subscriptionLimitReached');
+      expect(limitMsg).toBeUndefined();
+      const errorMsg = postedMessages.find((m) => m.command === 'error');
+      expect(errorMsg).toBeDefined();
     });
   });
 });

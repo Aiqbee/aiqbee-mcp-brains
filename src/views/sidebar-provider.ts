@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import type { ConnectionManager } from '../connection/connection.js';
-import { AuthService } from '../auth/auth-service.js';
+import { AuthService, AuthStateError } from '../auth/auth-service.js';
 import { BrainService } from '../api/brain-service.js';
 import { NeuronService } from '../api/neuron-service.js';
 import { addMcpConnection } from '../mcp/mcp-config.js';
@@ -194,6 +194,30 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         return;
       }
 
+      // Auth state errors (SignUpRequired, PendingApproval) — send actionable message
+      if (err instanceof AuthStateError) {
+        const webAppUrl = this.getWebAppUrl();
+        this.postMessage({
+          command: 'authActionRequired',
+          payload: { state: err.state, message: errorMessage, webAppUrl },
+        });
+        this.postMessage({ command: 'loading', payload: { loading: false, command: message.command } });
+        return;
+      }
+
+      // Subscription/license limit errors — parse structured error from backend
+      if (err instanceof ApiRequestError && err.status === 400) {
+        const limitError = this.parseSubscriptionLimitError(err);
+        if (limitError) {
+          this.postMessage({
+            command: 'subscriptionLimitReached',
+            payload: limitError,
+          });
+          this.postMessage({ command: 'loading', payload: { loading: false, command: message.command } });
+          return;
+        }
+      }
+
       this.postMessage({
         command: 'error',
         payload: { message: errorMessage, command: message.command },
@@ -203,6 +227,35 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         payload: { loading: false, command: message.command },
       });
     }
+  }
+
+  /** Web app URL from build-time env config (VITE_APP_URL) */
+  private getWebAppUrl(): string {
+    return process.env.VITE_APP_URL || 'https://app.aiqbee.com';
+  }
+
+  /** Parse a structured subscription limit error from the API response body */
+  private parseSubscriptionLimitError(err: ApiRequestError): {
+    errorCode: string;
+    message: string;
+    currentCount: number;
+    maxAllowed: number;
+    isHive: boolean;
+  } | null {
+    if (!err.body) { return null; }
+    try {
+      const body = typeof err.body === 'string' ? JSON.parse(err.body) : err.body;
+      if (body.errorCode && typeof body.currentCount === 'number') {
+        return {
+          errorCode: body.errorCode,
+          message: body.message || err.message,
+          currentCount: body.currentCount,
+          maxAllowed: body.maxAllowed,
+          isHive: this.connectionManager.isHive(),
+        };
+      }
+    } catch { /* not a structured error */ }
+    return null;
   }
 
   private postMessage(message: unknown): void {
