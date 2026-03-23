@@ -245,7 +245,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     if (!err.body) { return null; }
     try {
       const body = typeof err.body === 'string' ? JSON.parse(err.body) : err.body;
-      if (body.errorCode && typeof body.currentCount === 'number') {
+      if (body.errorCode && typeof body.currentCount === 'number' && typeof body.maxAllowed === 'number') {
         return {
           errorCode: body.errorCode,
           message: body.message || err.message,
