@@ -205,6 +205,9 @@ export class AuthService {
   }
 
   async signInWithMicrosoft(): Promise<void> {
+    // Cancel any in-progress sign-in to avoid orphaned callback servers
+    this.cancelSignIn();
+
     if (this.connectionManager.isHive()) {
       return this.signInViaHiveServer('entra');
     }
@@ -299,6 +302,9 @@ export class AuthService {
   }
 
   async signInWithGoogle(): Promise<void> {
+    // Cancel any in-progress sign-in to avoid orphaned callback servers
+    this.cancelSignIn();
+
     if (this.connectionManager.isHive()) {
       return this.signInViaHiveServer('google');
     }
