@@ -18,6 +18,7 @@ interface LoginPageProps {
   onOpenExternal: (url: string) => void;
   onConnectToHive: (url: string) => void;
   onDisconnectHive: () => void;
+  onCancelSignIn: () => void;
 }
 
 export function LoginPage({
@@ -38,6 +39,7 @@ export function LoginPage({
   onOpenExternal,
   onConnectToHive,
   onDisconnectHive,
+  onCancelSignIn,
 }: LoginPageProps) {
   const [showEmailForm, setShowEmailForm] = useState(false);
   const [email, setEmail] = useState('');
@@ -171,6 +173,16 @@ export function LoginPage({
           </button>
         )}
       </div>
+
+      {loading && !showEmailForm && (
+        <button
+          type="button"
+          className="btn-secondary cancel-sign-in-btn"
+          onClick={onCancelSignIn}
+        >
+          Cancel Sign In
+        </button>
+      )}
 
       {showEmailForm && hasEmail && (
         <form onSubmit={handleEmailSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

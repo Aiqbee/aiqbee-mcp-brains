@@ -178,6 +178,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           break;
         }
 
+        case 'cancelSignIn': {
+          this.authService.cancelSignIn();
+          this.postMessage({ command: 'loading', payload: { loading: false, command: 'signIn' } });
+          break;
+        }
+
         case 'openExternal': {
           vscode.env.openExternal(vscode.Uri.parse(message.payload.url));
           break;
@@ -185,6 +191,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
+
+      // User-initiated cancellation — loading already cleared by cancelSignIn handler
+      if (errorMessage === 'Sign-in cancelled') {
+        return;
+      }
 
       // If the API returned 401 after refresh failed, sign out so the
       // webview redirects to the login page instead of showing an error.

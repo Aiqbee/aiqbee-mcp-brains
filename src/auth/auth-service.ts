@@ -45,7 +45,7 @@ function startCallbackServer<T>(
   redirectPath: string,
   extractResult: (params: URLSearchParams) => T,
   timeoutMessage: string,
-): Promise<{ port: number; resultPromise: Promise<T>; close: () => void }> {
+): Promise<{ port: number; resultPromise: Promise<T>; cancel: () => void }> {
   return new Promise((resolveSetup) => {
     let resolveResult: (value: T) => void;
     let rejectResult: (err: Error) => void;
@@ -74,17 +74,22 @@ function startCallbackServer<T>(
       }
     });
 
+    const cancel = () => {
+      server.close();
+      if (!settled) { settled = true; rejectResult(new Error('Sign-in cancelled')); }
+    };
+
     server.listen(0, LOOPBACK_HOST, () => {
       const addr = server.address();
       const port = typeof addr === 'object' && addr ? addr.port : 0;
-      resolveSetup({ port, resultPromise, close: () => server.close() });
+      resolveSetup({ port, resultPromise, cancel });
     });
 
-    // Auto-close after 2 minutes
+    // Auto-close after 5 minutes
     setTimeout(() => {
       server.close();
       if (!settled) { settled = true; rejectResult(new Error(timeoutMessage)); }
-    }, 120_000);
+    }, 300_000);
   });
 }
 
@@ -151,12 +156,21 @@ export class AuthStateError extends Error {
 export class AuthService {
   private _onAuthStateChanged = new vscode.EventEmitter<{ authenticated: boolean; user?: UserDto; environment?: string }>();
   readonly onAuthStateChanged = this._onAuthStateChanged.event;
+  private pendingCancel: (() => void) | null = null;
 
   constructor(
     private readonly tokenStorage: TokenStorage,
     private readonly apiClient: ApiClient,
     private readonly connectionManager: ConnectionManager,
   ) {}
+
+  /** Cancel any in-progress sign-in flow (closes the callback server). */
+  cancelSignIn(): void {
+    if (this.pendingCancel) {
+      this.pendingCancel();
+      this.pendingCancel = null;
+    }
+  }
 
   getEnvironment(): string {
     const config = vscode.workspace.getConfiguration('aiqbee');
@@ -192,7 +206,8 @@ export class AuthService {
     const state = crypto.randomBytes(16).toString('hex');
 
     // Start localhost redirect server
-    const { port, resultPromise: codePromise, close } = await startCodeServer('/oauth/callback', state);
+    const { port, resultPromise: codePromise, cancel } = await startCodeServer('/oauth/callback', state);
+    this.pendingCancel = cancel;
     const redirectUri = `http://${LOOPBACK_HOST}:${port}/oauth/callback`;
 
     try {
@@ -269,7 +284,8 @@ export class AuthService {
         environment: this.getEnvironment(),
       });
     } finally {
-      close();
+      this.pendingCancel = null;
+      cancel();
     }
   }
 
@@ -404,7 +420,8 @@ export class AuthService {
   private async signInViaHiveServer(provider: 'entra' | 'google'): Promise<void> {
     const conn = this.connectionManager.getConnection();
     const state = crypto.randomBytes(16).toString('hex');
-    const { port, resultPromise: tokenPromise, close } = await startHiveTokenServer(state);
+    const { port, resultPromise: tokenPromise, cancel } = await startHiveTokenServer(state);
+    this.pendingCancel = cancel;
 
     try {
       const loginUrl = new URL('/api/vscode/auth/login', conn.baseUrl);
@@ -437,7 +454,8 @@ export class AuthService {
         environment: this.getEnvironment(),
       });
     } finally {
-      close();
+      this.pendingCancel = null;
+      cancel();
     }
   }
 
