@@ -16,7 +16,6 @@ function createMockAuthService(): AuthService {
     signInWithMicrosoft: vi.fn(),
     signInWithGoogle: vi.fn(),
     signInWithEmail: vi.fn(),
-    handleGoogleCallback: vi.fn(),
     register: vi.fn(),
     signOut: vi.fn(),
     refreshToken: vi.fn(),

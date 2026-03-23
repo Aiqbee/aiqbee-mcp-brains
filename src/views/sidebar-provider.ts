@@ -77,7 +77,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         }
 
         case 'signInGoogle': {
+          this.postMessage({ command: 'loading', payload: { loading: true, command: 'signIn' } });
           await this.authService.signInWithGoogle();
+          this.postMessage({ command: 'loading', payload: { loading: false, command: 'signIn' } });
           break;
         }
 

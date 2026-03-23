@@ -39,23 +39,7 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
   );
 
-  // Google OAuth URI handler
-  context.subscriptions.push(
-    vscode.window.registerUriHandler({
-      handleUri(uri: vscode.Uri): void {
-        if (uri.path === '/oauth/callback') {
-          const fragment = uri.fragment;
-          const params = new URLSearchParams(fragment);
-          const accessToken = params.get('access_token');
-          if (accessToken) {
-            authService.handleGoogleCallback(accessToken).catch((err) => {
-              vscode.window.showErrorMessage(`Google sign-in failed: ${err instanceof Error ? err.message : String(err)}`);
-            });
-          }
-        }
-      },
-    }),
-  );
+
 
   // Commands
   context.subscriptions.push(
