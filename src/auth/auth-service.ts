@@ -29,7 +29,7 @@ function generatePKCE(): { verifier: string; challenge: string } {
   return { verifier, challenge };
 }
 
-const LOOPBACK_HOST = '127.0.0.1';
+const LOOPBACK_HOST = 'localhost';
 const SUCCESS_HTML = '<html><body><h3>Sign-in successful!</h3><p>You can close this tab and return to VS Code.</p><script>window.close()</script></body></html>';
 
 function escapeHtml(text: string): string {
