@@ -62,11 +62,11 @@ function startCallbackServer<T>(
         try {
           const result = extractResult(url.searchParams);
           res.end(SUCCESS_HTML);
-          if (!settled) { settled = true; resolveResult(result); }
+          if (!settled) { settled = true; clearTimeout(timer); resolveResult(result); }
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           res.end(`<html><body><h3>Sign-in failed</h3><p>${escapeHtml(message)}</p></body></html>`);
-          if (!settled) { settled = true; rejectResult(err instanceof Error ? err : new Error(message)); }
+          if (!settled) { settled = true; clearTimeout(timer); rejectResult(err instanceof Error ? err : new Error(message)); }
         }
       } else {
         res.writeHead(404);
@@ -75,6 +75,7 @@ function startCallbackServer<T>(
     });
 
     const cancel = () => {
+      clearTimeout(timer);
       server.close();
       if (!settled) { settled = true; rejectResult(new SignInCancelledError()); }
     };
@@ -86,7 +87,7 @@ function startCallbackServer<T>(
     });
 
     // Auto-close after 5 minutes
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       server.close();
       if (!settled) { settled = true; rejectResult(new Error(timeoutMessage)); }
     }, 300_000);
@@ -235,6 +236,7 @@ export class AuthService {
 
       // Wait for the authorization code
       const code = await codePromise;
+      this.pendingCancel = null; // Code received — cancel no longer possible
 
       // Exchange code for tokens
       const tokenResponse = await fetch('https://login.microsoftonline.com/common/oauth2/v2.0/token', {
@@ -438,6 +440,7 @@ export class AuthService {
       await vscode.env.openExternal(vscode.Uri.parse(loginUrl.toString()));
 
       const result = await tokenPromise;
+      this.pendingCancel = null; // Tokens received — cancel no longer possible
 
       await this.tokenStorage.setAccessToken(result.token);
       if (result.refreshToken) {
