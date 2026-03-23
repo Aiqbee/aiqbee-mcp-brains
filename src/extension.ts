@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { ConnectionManager } from './connection/connection.js';
 import { TokenStorage } from './auth/token-storage.js';
 import { AuthService } from './auth/auth-service.js';
 import { ApiClient } from './api/api-client.js';
@@ -9,9 +10,10 @@ import { BrainGraphPanel } from './views/brain-graph-panel.js';
 
 export function activate(context: vscode.ExtensionContext): void {
   // Core services
+  const connectionManager = new ConnectionManager(context.globalState);
   const tokenStorage = new TokenStorage(context.secrets);
-  const apiClient = new ApiClient(tokenStorage);
-  const authService = new AuthService(tokenStorage, apiClient);
+  const apiClient = new ApiClient(tokenStorage, connectionManager);
+  const authService = new AuthService(tokenStorage, apiClient, connectionManager);
   const brainService = new BrainService(apiClient);
   const neuronService = new NeuronService(apiClient);
 
@@ -21,6 +23,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // Register sidebar webview provider
   const sidebarProvider = new SidebarProvider(
     context.extensionUri,
+    connectionManager,
     authService,
     brainService,
     neuronService,
@@ -75,9 +78,31 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
+  // Proactive token refresh — run every 15 minutes to keep the session alive
+  const REFRESH_INTERVAL_MS = 15 * 60 * 1000;
+  let refreshInProgress = false;
+  const refreshTimer = setInterval(async () => {
+    if (refreshInProgress) { return; }
+    refreshInProgress = true;
+    try {
+      const state = await authService.initialize();
+      if (state.authenticated) {
+        await authService.refreshToken();
+      }
+    } catch {
+      // Refresh failed silently — the next API call will trigger 401 handling
+    } finally {
+      refreshInProgress = false;
+    }
+  }, REFRESH_INTERVAL_MS);
+
   // Cleanup
   context.subscriptions.push({
-    dispose: () => authService.dispose(),
+    dispose: () => {
+      clearInterval(refreshTimer);
+      authService.dispose();
+      connectionManager.dispose();
+    },
   });
 }
 

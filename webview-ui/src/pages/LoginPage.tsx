@@ -4,24 +4,48 @@ interface LoginPageProps {
   loading: boolean;
   error?: string;
   environment?: string;
+  backendType: 'cloud' | 'hive';
+  hiveLabel?: string;
+  authProviders: string[];
   onSignInMicrosoft: () => void;
   onSignInGoogle: () => void;
   onSignInEmail: (email: string, password: string) => void;
   onCreateAccount: () => void;
+  authActionState?: string;
+  authActionMessage?: string;
+  authActionWebAppUrl?: string;
+  onClearAuthAction: () => void;
+  onOpenExternal: (url: string) => void;
+  onConnectToHive: (url: string) => void;
+  onDisconnectHive: () => void;
+  onCancelSignIn: () => void;
 }
 
 export function LoginPage({
   loading,
   error,
   environment,
+  backendType,
+  hiveLabel,
+  authProviders,
   onSignInMicrosoft,
   onSignInGoogle,
   onSignInEmail,
   onCreateAccount,
+  authActionState,
+  authActionMessage,
+  authActionWebAppUrl,
+  onClearAuthAction,
+  onOpenExternal,
+  onConnectToHive,
+  onDisconnectHive,
+  onCancelSignIn,
 }: LoginPageProps) {
   const [showEmailForm, setShowEmailForm] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showHiveForm, setShowHiveForm] = useState(false);
+  const [hiveUrl, setHiveUrl] = useState('');
 
   const handleEmailSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,6 +53,18 @@ export function LoginPage({
       onSignInEmail(email, password);
     }
   };
+
+  const handleHiveConnect = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (hiveUrl.trim()) {
+      onConnectToHive(hiveUrl.trim());
+    }
+  };
+
+  const isHive = backendType === 'hive';
+  const hasEntra = authProviders.includes('entra');
+  const hasGoogle = authProviders.includes('google');
+  const hasEmail = authProviders.includes('email');
 
   return (
     <div className="page">
@@ -42,55 +78,113 @@ export function LoginPage({
         </div>
       </div>
 
+      {isHive && (
+        <div className="hive-indicator">
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--vscode-foreground)' }}>
+            Connected to {hiveLabel}
+          </div>
+          <button
+            className="link"
+            onClick={onDisconnectHive}
+            style={{ background: 'none', border: 'none', fontSize: 11 }}
+          >
+            Switch to Aiqbee Cloud
+          </button>
+        </div>
+      )}
+
       {error && <div className="error-message">{error}</div>}
 
-      <div className="auth-info">
-        Already have a Microsoft or Google work account? Sign in directly — your Aiqbee account will be created automatically on first sign-in.
-      </div>
+      {authActionState && (
+        <div className="auth-action-banner">
+          <div>{authActionMessage}</div>
+          {authActionState === 'SignUpRequired' && authActionWebAppUrl && (
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => {
+                onClearAuthAction();
+                onOpenExternal(authActionWebAppUrl);
+              }}
+            >
+              Open Aiqbee Web App to Sign Up
+            </button>
+          )}
+          <button
+            type="button"
+            className="link"
+            onClick={onClearAuthAction}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {!isHive && !authActionState && (
+        <div className="auth-info">
+          Already have a Microsoft or Google work account? Sign in directly — your Aiqbee account will be created automatically on first sign-in.
+        </div>
+      )}
 
       <div className="auth-buttons">
-        <button
-          className="auth-button auth-button-microsoft"
-          onClick={onSignInMicrosoft}
-          disabled={loading}
-        >
-          <svg width="16" height="16" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
-            <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
-            <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
-            <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
-          </svg>
-          <span>Sign in with Microsoft</span>
-          {loading && <div className="spinner" style={{ width: 12, height: 12, borderWidth: 1.5 }} />}
-        </button>
+        {hasEntra && (
+          <button
+            className="auth-button auth-button-microsoft"
+            onClick={onSignInMicrosoft}
+            disabled={loading}
+          >
+            <svg width="16" height="16" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
+              <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
+              <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
+              <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+            </svg>
+            <span>Sign in with Microsoft</span>
+            {loading && <div className="spinner" style={{ width: 12, height: 12, borderWidth: 1.5 }} />}
+          </button>
+        )}
 
-        <button
-          className="auth-button auth-button-google"
-          onClick={onSignInGoogle}
-          disabled={loading}
-        >
-          <svg width="16" height="16" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
-            <path d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z" fill="#FFC107"/>
-            <path d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z" fill="#FF3D00"/>
-            <path d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0124 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z" fill="#4CAF50"/>
-            <path d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 01-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z" fill="#1976D2"/>
-          </svg>
-          <span>Sign in with Google</span>
-        </button>
+        {hasGoogle && (
+          <button
+            className="auth-button auth-button-google"
+            onClick={onSignInGoogle}
+            disabled={loading}
+          >
+            <svg width="16" height="16" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+              <path d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z" fill="#FFC107"/>
+              <path d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z" fill="#FF3D00"/>
+              <path d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0124 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z" fill="#4CAF50"/>
+              <path d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 01-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z" fill="#1976D2"/>
+            </svg>
+            <span>Sign in with Google</span>
+          </button>
+        )}
 
-        <button
-          className="auth-button auth-button-email"
-          onClick={() => setShowEmailForm(!showEmailForm)}
-          disabled={loading}
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M1 4l7 4 7-4v8H1V4zm0-1h14l-7 4L1 3z" />
-          </svg>
-          <span>Sign in with Email</span>
-        </button>
+        {hasEmail && (
+          <button
+            className="auth-button auth-button-email"
+            onClick={() => setShowEmailForm(!showEmailForm)}
+            disabled={loading}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M1 4l7 4 7-4v8H1V4zm0-1h14l-7 4L1 3z" />
+            </svg>
+            <span>Sign in with Email</span>
+          </button>
+        )}
       </div>
 
-      {showEmailForm && (
+      {loading && !showEmailForm && (
+        <button
+          type="button"
+          className="btn-secondary cancel-sign-in-btn"
+          onClick={onCancelSignIn}
+        >
+          Cancel Sign In
+        </button>
+      )}
+
+      {showEmailForm && hasEmail && (
         <form onSubmit={handleEmailSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div className="form-group">
             <label htmlFor="email">Email</label>
@@ -121,18 +215,65 @@ export function LoginPage({
         </form>
       )}
 
-      <div className="divider" />
+      {!isHive && (
+        <>
+          <div className="divider" />
 
-      <div style={{ textAlign: 'center' }}>
-        <span style={{ fontSize: 12, color: 'var(--vscode-descriptionForeground)' }}>
-          No account yet?{' '}
-        </span>
-        <button className="link" onClick={onCreateAccount} style={{ background: 'none', border: 'none' }}>
-          Create an email account
-        </button>
-      </div>
+          {!showHiveForm ? (
+            <div className="auth-buttons">
+              <button
+                className="auth-button auth-button-hive"
+                onClick={() => setShowHiveForm(true)}
+                disabled={loading}
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M3 1h10v2H3V1zm0 12h10v2H3v-2zm-2-3h14v2H1v-2zm0-6h14v2H1V4zm1 3h12v2H2V7z" />
+                </svg>
+                <span>Your Hive Server</span>
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleHiveConnect} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div className="form-group">
+                <label htmlFor="hive-url">Hive Server URL</label>
+                <input
+                  id="hive-url"
+                  type="text"
+                  placeholder="hive.yourcompany.com"
+                  value={hiveUrl}
+                  onChange={(e) => setHiveUrl(e.target.value)}
+                  required
+                  autoFocus
+                />
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button type="submit" className="btn-primary" disabled={loading || !hiveUrl.trim()} style={{ flex: 1 }}>
+                  {loading ? 'Connecting...' : 'Connect'}
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => { setShowHiveForm(false); setHiveUrl(''); }}
+                  style={{ flex: 0 }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
 
-      {environment && (
+          <div style={{ textAlign: 'center' }}>
+            <span style={{ fontSize: 12, color: 'var(--vscode-descriptionForeground)' }}>
+              No account yet?{' '}
+            </span>
+            <button className="link" onClick={onCreateAccount} style={{ background: 'none', border: 'none' }}>
+              Create an email account
+            </button>
+          </div>
+        </>
+      )}
+
+      {environment && !isHive && (
         <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--vscode-descriptionForeground)', marginTop: 4 }}>
           Environment: <span style={{ fontWeight: 600 }}>{environment}</span>
         </div>

@@ -359,6 +359,81 @@ input::placeholder, textarea::placeholder {
   background-color: var(--vscode-button-secondaryHoverBackground);
 }
 
+.auth-button-hive {
+  background-color: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+}
+
+.auth-button-hive:hover {
+  background-color: var(--vscode-button-secondaryHoverBackground);
+}
+
+.cancel-sign-in-btn {
+  width: 100%;
+}
+
+/* Hive server connection indicator */
+.hive-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px;
+  background-color: var(--vscode-textBlockQuote-background, rgba(128,128,128,0.1));
+  border-radius: 3px;
+  text-align: center;
+}
+
+.hive-banner {
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  background-color: var(--vscode-textBlockQuote-background, rgba(128,128,128,0.1));
+  color: var(--vscode-descriptionForeground);
+  border-bottom: 1px solid var(--vscode-sideBar-border, var(--vscode-panel-border, rgba(128,128,128,0.2)));
+}
+
+.auth-action-banner {
+  padding: 10px 12px;
+  border-radius: 4px;
+  background-color: var(--vscode-inputValidation-warningBackground, rgba(200,150,50,0.15));
+  border: 1px solid var(--vscode-inputValidation-warningBorder, rgba(200,150,50,0.4));
+  text-align: center;
+  font-size: 12px;
+  color: var(--vscode-foreground);
+}
+
+.auth-action-banner .btn-primary {
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+.auth-action-banner .link {
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+.subscription-limit-banner {
+  padding: 10px 12px;
+  border-radius: 4px;
+  background-color: var(--vscode-inputValidation-warningBackground, rgba(200,150,50,0.15));
+  border: 1px solid var(--vscode-inputValidation-warningBorder, rgba(200,150,50,0.4));
+  font-size: 12px;
+  color: var(--vscode-foreground);
+}
+
+.subscription-limit-banner .limit-counts {
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.subscription-limit-banner .limit-action {
+  margin-top: 6px;
+  font-style: italic;
+  color: var(--vscode-descriptionForeground);
+}
+
 /* Toggle switch */
 .toggle-row {
   display: flex;

@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { TokenStorage } from '../auth/token-storage.js';
+import type { ConnectionManager } from '../connection/connection.js';
 
 const log = vscode.window.createOutputChannel('Aiqbee API');
 
@@ -18,11 +19,13 @@ export class ApiClient {
   private refreshPromise: Promise<boolean> | null = null;
   private onRefreshToken: (() => Promise<boolean>) | null = null;
 
-  constructor(private readonly tokenStorage: TokenStorage) {}
+  constructor(
+    private readonly tokenStorage: TokenStorage,
+    private readonly connectionManager: ConnectionManager,
+  ) {}
 
   get baseUrl(): string {
-    // Injected at build time by esbuild from .env.eudev / .env.euprod
-    return process.env.VITE_API_URL || 'https://api.aiqbee.com';
+    return this.connectionManager.getConnection().baseUrl;
   }
 
   setRefreshHandler(handler: () => Promise<boolean>): void {

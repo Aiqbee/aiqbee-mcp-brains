@@ -521,6 +521,14 @@ export class BrainGraphPanel {
     const loadingStatus = document.getElementById('loading-status');
     const loadingStatusText = document.getElementById('loading-status-text');
 
+    // --- Resize observer: keep ForceGraph canvas in sync with container ---
+    new ResizeObserver(() => {
+      if (graphInstance && container) {
+        graphInstance.width(container.clientWidth);
+        graphInstance.height(container.clientHeight);
+      }
+    }).observe(container);
+
     // --- Legend toggle ---
     let legendOpen = true;
     legendToggle.addEventListener('click', () => {

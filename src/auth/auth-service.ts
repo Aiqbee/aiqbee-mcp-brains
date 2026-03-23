@@ -3,7 +3,8 @@ import * as http from 'http';
 import * as crypto from 'crypto';
 import { TokenStorage } from './token-storage.js';
 import { ApiClient } from '../api/api-client.js';
-import type { AuthResponseDto, UserDto, EmailSignInDto, EmailRegisterDto } from '../api/types.js';
+import type { ConnectionManager } from '../connection/connection.js';
+import type { AuthResponseDto, AuthState, UserDto, EmailSignInDto, EmailRegisterDto } from '../api/types.js';
 
 interface EnvConfig {
   apiUrl: string;
@@ -28,32 +29,44 @@ function generatePKCE(): { verifier: string; challenge: string } {
   return { verifier, challenge };
 }
 
-/** Start a temporary localhost HTTP server to capture OAuth redirects */
-function startRedirectServer(
+const LOOPBACK_HOST = '127.0.0.1';
+const SUCCESS_HTML = '<html><body><h3>Sign-in successful!</h3><p>You can close this tab and return to VS Code.</p><script>window.close()</script></body></html>';
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/**
+ * Start a temporary localhost HTTP server that listens for a single callback
+ * on the given path. The `extractResult` function parses the query parameters
+ * and returns either a resolved value or throws to reject.
+ */
+function startCallbackServer<T>(
   redirectPath: string,
-): Promise<{ port: number; codePromise: Promise<string>; close: () => void }> {
+  extractResult: (params: URLSearchParams) => T,
+  timeoutMessage: string,
+): Promise<{ port: number; resultPromise: Promise<T>; cancel: () => void }> {
   return new Promise((resolveSetup) => {
-    let resolveCode: (code: string) => void;
-    let rejectCode: (err: Error) => void;
-    const codePromise = new Promise<string>((res, rej) => {
-      resolveCode = res;
-      rejectCode = rej;
+    let resolveResult: (value: T) => void;
+    let rejectResult: (err: Error) => void;
+    let settled = false;
+    const resultPromise = new Promise<T>((res, rej) => {
+      resolveResult = res;
+      rejectResult = rej;
     });
 
     const server = http.createServer((req, res) => {
       const url = new URL(req.url || '/', `http://localhost`);
       if (url.pathname === redirectPath) {
-        const code = url.searchParams.get('code');
-        const error = url.searchParams.get('error');
-        const errorDesc = url.searchParams.get('error_description');
-
         res.writeHead(200, { 'Content-Type': 'text/html' });
-        if (code) {
-          res.end('<html><body><h3>Sign-in successful!</h3><p>You can close this tab and return to VS Code.</p><script>window.close()</script></body></html>');
-          resolveCode(code);
-        } else {
-          res.end(`<html><body><h3>Sign-in failed</h3><p>${errorDesc || error || 'Unknown error'}</p></body></html>`);
-          rejectCode(new Error(errorDesc || error || 'OAuth failed'));
+        try {
+          const result = extractResult(url.searchParams);
+          res.end(SUCCESS_HTML);
+          if (!settled) { settled = true; clearTimeout(timer); resolveResult(result); }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          res.end(`<html><body><h3>Sign-in failed</h3><p>${escapeHtml(message)}</p></body></html>`);
+          if (!settled) { settled = true; clearTimeout(timer); rejectResult(err instanceof Error ? err : new Error(message)); }
         }
       } else {
         res.writeHead(404);
@@ -61,33 +74,111 @@ function startRedirectServer(
       }
     });
 
-    // Listen on random available port
-    server.listen(0, '127.0.0.1', () => {
+    const cancel = () => {
+      clearTimeout(timer);
+      server.close();
+      if (!settled) { settled = true; rejectResult(new SignInCancelledError()); }
+    };
+
+    server.listen(0, LOOPBACK_HOST, () => {
       const addr = server.address();
       const port = typeof addr === 'object' && addr ? addr.port : 0;
-      resolveSetup({
-        port,
-        codePromise,
-        close: () => server.close(),
-      });
+      resolveSetup({ port, resultPromise, cancel });
     });
 
-    // Auto-close after 2 minutes
-    setTimeout(() => {
+    // Auto-close after 5 minutes
+    const timer = setTimeout(() => {
       server.close();
-      rejectCode(new Error('OAuth timed out'));
-    }, 120_000);
+      if (!settled) { settled = true; rejectResult(new Error(timeoutMessage)); }
+    }, 300_000);
   });
+}
+
+/** Start a localhost server to capture an OAuth authorization code */
+function startCodeServer(redirectPath: string, expectedState: string) {
+  return startCallbackServer<string>(
+    redirectPath,
+    (params) => {
+      const state = params.get('state');
+      if (state !== expectedState) {
+        throw new Error('OAuth state mismatch — possible CSRF attack');
+      }
+      const code = params.get('code');
+      if (code) {
+        return code;
+      }
+      const errorDesc = params.get('error_description');
+      const error = params.get('error');
+      throw new Error(errorDesc || error || 'OAuth failed');
+    },
+    'OAuth timed out',
+  );
+}
+
+interface HiveTokenResult {
+  token: string;
+  refreshToken: string;
+  user: string;
+}
+
+/** Start a localhost server to capture hive-server brokered auth tokens */
+function startHiveTokenServer(expectedState: string) {
+  return startCallbackServer<HiveTokenResult>(
+    '/oauth/callback',
+    (params) => {
+      const state = params.get('state');
+      if (state !== expectedState) {
+        throw new Error('OAuth state mismatch — possible CSRF attack');
+      }
+      const token = params.get('token');
+      if (token) {
+        return {
+          token,
+          refreshToken: params.get('refresh_token') || '',
+          user: params.get('user') || '',
+        };
+      }
+      throw new Error(params.get('error') || 'No token received from Hive Server');
+    },
+    'Hive Server authentication timed out',
+  );
+}
+
+export class SignInCancelledError extends Error {
+  constructor() {
+    super('Sign-in cancelled');
+    this.name = 'SignInCancelledError';
+  }
+}
+
+export class AuthStateError extends Error {
+  constructor(
+    message: string,
+    public readonly state: AuthState,
+  ) {
+    super(message);
+    this.name = 'AuthStateError';
+  }
 }
 
 export class AuthService {
   private _onAuthStateChanged = new vscode.EventEmitter<{ authenticated: boolean; user?: UserDto; environment?: string }>();
   readonly onAuthStateChanged = this._onAuthStateChanged.event;
+  private pendingCancel: (() => void) | null = null;
 
   constructor(
     private readonly tokenStorage: TokenStorage,
     private readonly apiClient: ApiClient,
+    private readonly connectionManager: ConnectionManager,
   ) {}
+
+  /** Cancel any in-progress sign-in flow (closes the callback server). */
+  cancelSignIn(): void {
+    if (this.pendingCancel) {
+      this.pendingCancel();
+      this.pendingCancel = null;
+    }
+  }
 
   getEnvironment(): string {
     const config = vscode.workspace.getConfiguration('aiqbee');
@@ -114,13 +205,21 @@ export class AuthService {
   }
 
   async signInWithMicrosoft(): Promise<void> {
+    // Cancel any in-progress sign-in to avoid orphaned callback servers
+    this.cancelSignIn();
+
+    if (this.connectionManager.isHive()) {
+      return this.signInViaHiveServer('entra');
+    }
+
     const envConfig = getEnvConfig();
     const pkce = generatePKCE();
     const state = crypto.randomBytes(16).toString('hex');
 
     // Start localhost redirect server
-    const { port, codePromise, close } = await startRedirectServer('/oauth/callback');
-    const redirectUri = `http://localhost:${port}/oauth/callback`;
+    const { port, resultPromise: codePromise, cancel } = await startCodeServer('/oauth/callback', state);
+    this.pendingCancel = cancel;
+    const redirectUri = `http://${LOOPBACK_HOST}:${port}/oauth/callback`;
 
     try {
       // Build Entra authorization URL
@@ -140,6 +239,7 @@ export class AuthService {
 
       // Wait for the authorization code
       const code = await codePromise;
+      this.pendingCancel = null; // Code received — cancel no longer possible
 
       // Exchange code for tokens
       const tokenResponse = await fetch('https://login.microsoftonline.com/common/oauth2/v2.0/token', {
@@ -196,11 +296,19 @@ export class AuthService {
         environment: this.getEnvironment(),
       });
     } finally {
-      close();
+      this.pendingCancel = null;
+      cancel();
     }
   }
 
   async signInWithGoogle(): Promise<void> {
+    // Cancel any in-progress sign-in to avoid orphaned callback servers
+    this.cancelSignIn();
+
+    if (this.connectionManager.isHive()) {
+      return this.signInViaHiveServer('google');
+    }
+
     const envConfig = getEnvConfig();
 
     const redirectUri = await vscode.env.asExternalUri(
@@ -255,6 +363,23 @@ export class AuthService {
     }
 
     try {
+      // Hive Server: refresh via hive-server's own endpoint
+      if (this.connectionManager.isHive()) {
+        const response = await this.apiClient.postPublic<{ accessToken: string; refreshToken: string }>(
+          '/api/vscode/auth/refresh',
+          { refreshToken },
+        );
+        if (response.accessToken) {
+          await this.tokenStorage.setAccessToken(response.accessToken);
+          if (response.refreshToken) {
+            await this.tokenStorage.setRefreshToken(response.refreshToken);
+          }
+          return true;
+        }
+        return false;
+      }
+
+      // Cloud: existing refresh logic
       const authType = await this.tokenStorage.getAuthType();
 
       if (authType === 'microsoft') {
@@ -303,18 +428,74 @@ export class AuthService {
     }
   }
 
+  /**
+   * Brokered auth via Hive Server. Opens the hive-server's login page in the
+   * browser, which handles OAuth and redirects back to localhost with JWT tokens.
+   */
+  private async signInViaHiveServer(provider: 'entra' | 'google'): Promise<void> {
+    const conn = this.connectionManager.getConnection();
+    const state = crypto.randomBytes(16).toString('hex');
+    const { port, resultPromise: tokenPromise, cancel } = await startHiveTokenServer(state);
+    this.pendingCancel = cancel;
+
+    try {
+      const loginUrl = new URL('/api/vscode/auth/login', conn.baseUrl);
+      loginUrl.searchParams.set('redirect_port', String(port));
+      loginUrl.searchParams.set('provider', provider);
+      loginUrl.searchParams.set('state', state);
+      await vscode.env.openExternal(vscode.Uri.parse(loginUrl.toString()));
+
+      const result = await tokenPromise;
+      this.pendingCancel = null; // Tokens received — cancel no longer possible
+
+      await this.tokenStorage.setAccessToken(result.token);
+      if (result.refreshToken) {
+        await this.tokenStorage.setRefreshToken(result.refreshToken);
+      }
+      await this.tokenStorage.setAuthType(provider === 'entra' ? 'microsoft' : 'google');
+
+      let user: UserDto | undefined;
+      if (result.user) {
+        try {
+          user = JSON.parse(result.user) as UserDto;
+          await this.tokenStorage.setUserJson(result.user);
+        } catch {
+          // User JSON parsing failed — not critical
+        }
+      }
+
+      this._onAuthStateChanged.fire({
+        authenticated: true,
+        user,
+        environment: this.getEnvironment(),
+      });
+    } finally {
+      this.pendingCancel = null;
+      cancel();
+    }
+  }
+
   private async handleAuthResponse(
     response: AuthResponseDto,
     authType: 'microsoft' | 'google' | 'email',
   ): Promise<void> {
     if (response.state !== 'Active') {
       if (response.state === 'SignUpRequired') {
-        throw new Error('Account not found. Please create an account first.');
+        throw new AuthStateError(
+          'No account found. Please sign up at the Aiqbee web app first, then return here to sign in.',
+          'SignUpRequired',
+        );
       }
       if (response.state === 'PendingApproval') {
-        throw new Error('Your account is pending approval.');
+        throw new AuthStateError(
+          'Your account is pending approval by your organisation administrator.',
+          'PendingApproval',
+        );
       }
-      throw new Error(response.message || `Authentication failed: ${response.state}`);
+      throw new AuthStateError(
+        response.message || `Authentication failed: ${response.state}`,
+        response.state,
+      );
     }
 
     if (!response.accessToken) {

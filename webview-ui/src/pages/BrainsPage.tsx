@@ -42,6 +42,13 @@ export function BrainsPage({ user, onSignOut }: BrainsPageProps) {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [firstBrainPrompt, setFirstBrainPrompt] = useState(false);
   const [error, setError] = useState<string>();
+  const [limitError, setLimitError] = useState<{
+    errorCode: string;
+    message: string;
+    currentCount: number;
+    maxAllowed: number;
+    isHive: boolean;
+  }>();
   const [initialLoadDone, setInitialLoadDone] = useState(false);
 
   // Listen for messages from extension host
@@ -77,6 +84,13 @@ export function BrainsPage({ user, onSignOut }: BrainsPageProps) {
           break;
         case 'error':
           setError(message.payload.message);
+          setLimitError(undefined);
+          setLoading(false);
+          break;
+        case 'subscriptionLimitReached':
+          setLimitError(message.payload);
+          setError(undefined);
+          setShowCreateDialog(false);
           setLoading(false);
           break;
       }
@@ -152,6 +166,31 @@ export function BrainsPage({ user, onSignOut }: BrainsPageProps) {
       )}
 
       {error && <div className="error-message">{error}</div>}
+
+      {limitError && (
+        <div className="subscription-limit-banner">
+          <div>{limitError.message}</div>
+          <div className="limit-counts">
+            {limitError.currentCount} / {limitError.maxAllowed} brains used
+          </div>
+          {limitError.isHive ? (
+            <div className="limit-action">
+              Contact your administrator to upgrade the Hive Server license.
+            </div>
+          ) : (
+            <div className="limit-action">
+              Visit the Aiqbee web app to manage your subscription.
+            </div>
+          )}
+          <button
+            type="button"
+            className="link"
+            onClick={() => setLimitError(undefined)}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <div className="loading-container">

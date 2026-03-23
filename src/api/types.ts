@@ -157,6 +157,9 @@ export type WebviewMessage =
   | { command: 'addMcpConnection'; payload: { brainId: string; brainName: string } }
   | { command: 'openBrainGraph'; payload: { brainId: string; brainName: string; canWrite: boolean } }
   | { command: 'openExternal'; payload: { url: string } }
+  | { command: 'connectToHive'; payload: { url: string } }
+  | { command: 'disconnectHive' }
+  | { command: 'cancelSignIn' }
   | { command: 'ready' };
 
 export type ExtensionMessage =
@@ -166,4 +169,8 @@ export type ExtensionMessage =
   | { command: 'brainCounts'; payload: { brainId: string; counts: BrainCounts } }
   | { command: 'brainTemplatesLoaded'; payload: BrainTemplateDto[] }
   | { command: 'error'; payload: { message: string; command?: string } }
-  | { command: 'loading'; payload: { loading: boolean; command?: string } };
+  | { command: 'loading'; payload: { loading: boolean; command?: string } }
+  | { command: 'emailVerificationRequired'; payload: { email: string } }
+  | { command: 'connectionChanged'; payload: { backendType: 'cloud' | 'hive'; label: string; authProviders: string[] } }
+  | { command: 'authActionRequired'; payload: { state: string; message: string; webAppUrl: string } }
+  | { command: 'subscriptionLimitReached'; payload: { errorCode: string; message: string; currentCount: number; maxAllowed: number; isHive: boolean } };

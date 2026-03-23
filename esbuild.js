@@ -49,6 +49,7 @@ async function main() {
     logLevel: 'info',
     define: {
       'process.env.VITE_API_URL': JSON.stringify(envVars.VITE_API_URL || 'https://api.aiqbee.com'),
+      'process.env.VITE_APP_URL': JSON.stringify(envVars.VITE_APP_URL || 'https://app.aiqbee.com'),
       'process.env.VITE_MSAL_CLIENT_ID': JSON.stringify(envVars.VITE_MSAL_CLIENT_ID || ''),
       'process.env.VITE_ENTRA_SCOPES': JSON.stringify(envVars.VITE_ENTRA_SCOPES || ''),
       'process.env.VITE_GOOGLE_CLIENT_ID': JSON.stringify(envVars.VITE_GOOGLE_CLIENT_ID || ''),
