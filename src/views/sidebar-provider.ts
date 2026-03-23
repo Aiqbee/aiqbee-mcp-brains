@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import type { ConnectionManager } from '../connection/connection.js';
-import { AuthService, AuthStateError } from '../auth/auth-service.js';
+import { AuthService, AuthStateError, SignInCancelledError } from '../auth/auth-service.js';
 import { BrainService } from '../api/brain-service.js';
 import { NeuronService } from '../api/neuron-service.js';
 import { addMcpConnection } from '../mcp/mcp-config.js';
@@ -193,7 +193,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       const errorMessage = err instanceof Error ? err.message : String(err);
 
       // User-initiated cancellation — loading already cleared by cancelSignIn handler
-      if (errorMessage === 'Sign-in cancelled') {
+      if (err instanceof SignInCancelledError) {
         return;
       }
 

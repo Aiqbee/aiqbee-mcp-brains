@@ -76,7 +76,7 @@ function startCallbackServer<T>(
 
     const cancel = () => {
       server.close();
-      if (!settled) { settled = true; rejectResult(new Error('Sign-in cancelled')); }
+      if (!settled) { settled = true; rejectResult(new SignInCancelledError()); }
     };
 
     server.listen(0, LOOPBACK_HOST, () => {
@@ -141,6 +141,13 @@ function startHiveTokenServer(expectedState: string) {
     },
     'Hive Server authentication timed out',
   );
+}
+
+export class SignInCancelledError extends Error {
+  constructor() {
+    super('Sign-in cancelled');
+    this.name = 'SignInCancelledError';
+  }
 }
 
 export class AuthStateError extends Error {
