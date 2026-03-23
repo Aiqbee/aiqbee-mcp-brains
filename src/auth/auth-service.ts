@@ -45,7 +45,7 @@ function startCallbackServer<T>(
   redirectPath: string,
   extractResult: (params: URLSearchParams) => T,
   timeoutMessage: string,
-): Promise<{ port: number; resultPromise: Promise<T>; close: () => void }> {
+): Promise<{ port: number; resultPromise: Promise<T>; cancel: () => void }> {
   return new Promise((resolveSetup) => {
     let resolveResult: (value: T) => void;
     let rejectResult: (err: Error) => void;
@@ -62,11 +62,11 @@ function startCallbackServer<T>(
         try {
           const result = extractResult(url.searchParams);
           res.end(SUCCESS_HTML);
-          if (!settled) { settled = true; resolveResult(result); }
+          if (!settled) { settled = true; clearTimeout(timer); resolveResult(result); }
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           res.end(`<html><body><h3>Sign-in failed</h3><p>${escapeHtml(message)}</p></body></html>`);
-          if (!settled) { settled = true; rejectResult(err instanceof Error ? err : new Error(message)); }
+          if (!settled) { settled = true; clearTimeout(timer); rejectResult(err instanceof Error ? err : new Error(message)); }
         }
       } else {
         res.writeHead(404);
@@ -74,17 +74,23 @@ function startCallbackServer<T>(
       }
     });
 
+    const cancel = () => {
+      clearTimeout(timer);
+      server.close();
+      if (!settled) { settled = true; rejectResult(new SignInCancelledError()); }
+    };
+
     server.listen(0, LOOPBACK_HOST, () => {
       const addr = server.address();
       const port = typeof addr === 'object' && addr ? addr.port : 0;
-      resolveSetup({ port, resultPromise, close: () => server.close() });
+      resolveSetup({ port, resultPromise, cancel });
     });
 
-    // Auto-close after 2 minutes
-    setTimeout(() => {
+    // Auto-close after 5 minutes
+    const timer = setTimeout(() => {
       server.close();
       if (!settled) { settled = true; rejectResult(new Error(timeoutMessage)); }
-    }, 120_000);
+    }, 300_000);
   });
 }
 
@@ -138,6 +144,13 @@ function startHiveTokenServer(expectedState: string) {
   );
 }
 
+export class SignInCancelledError extends Error {
+  constructor() {
+    super('Sign-in cancelled');
+    this.name = 'SignInCancelledError';
+  }
+}
+
 export class AuthStateError extends Error {
   constructor(
     message: string,
@@ -151,12 +164,21 @@ export class AuthStateError extends Error {
 export class AuthService {
   private _onAuthStateChanged = new vscode.EventEmitter<{ authenticated: boolean; user?: UserDto; environment?: string }>();
   readonly onAuthStateChanged = this._onAuthStateChanged.event;
+  private pendingCancel: (() => void) | null = null;
 
   constructor(
     private readonly tokenStorage: TokenStorage,
     private readonly apiClient: ApiClient,
     private readonly connectionManager: ConnectionManager,
   ) {}
+
+  /** Cancel any in-progress sign-in flow (closes the callback server). */
+  cancelSignIn(): void {
+    if (this.pendingCancel) {
+      this.pendingCancel();
+      this.pendingCancel = null;
+    }
+  }
 
   getEnvironment(): string {
     const config = vscode.workspace.getConfiguration('aiqbee');
@@ -183,6 +205,9 @@ export class AuthService {
   }
 
   async signInWithMicrosoft(): Promise<void> {
+    // Cancel any in-progress sign-in to avoid orphaned callback servers
+    this.cancelSignIn();
+
     if (this.connectionManager.isHive()) {
       return this.signInViaHiveServer('entra');
     }
@@ -192,7 +217,8 @@ export class AuthService {
     const state = crypto.randomBytes(16).toString('hex');
 
     // Start localhost redirect server
-    const { port, resultPromise: codePromise, close } = await startCodeServer('/oauth/callback', state);
+    const { port, resultPromise: codePromise, cancel } = await startCodeServer('/oauth/callback', state);
+    this.pendingCancel = cancel;
     const redirectUri = `http://${LOOPBACK_HOST}:${port}/oauth/callback`;
 
     try {
@@ -213,6 +239,7 @@ export class AuthService {
 
       // Wait for the authorization code
       const code = await codePromise;
+      this.pendingCancel = null; // Code received — cancel no longer possible
 
       // Exchange code for tokens
       const tokenResponse = await fetch('https://login.microsoftonline.com/common/oauth2/v2.0/token', {
@@ -269,11 +296,15 @@ export class AuthService {
         environment: this.getEnvironment(),
       });
     } finally {
-      close();
+      this.pendingCancel = null;
+      cancel();
     }
   }
 
   async signInWithGoogle(): Promise<void> {
+    // Cancel any in-progress sign-in to avoid orphaned callback servers
+    this.cancelSignIn();
+
     if (this.connectionManager.isHive()) {
       return this.signInViaHiveServer('google');
     }
@@ -404,7 +435,8 @@ export class AuthService {
   private async signInViaHiveServer(provider: 'entra' | 'google'): Promise<void> {
     const conn = this.connectionManager.getConnection();
     const state = crypto.randomBytes(16).toString('hex');
-    const { port, resultPromise: tokenPromise, close } = await startHiveTokenServer(state);
+    const { port, resultPromise: tokenPromise, cancel } = await startHiveTokenServer(state);
+    this.pendingCancel = cancel;
 
     try {
       const loginUrl = new URL('/api/vscode/auth/login', conn.baseUrl);
@@ -414,6 +446,7 @@ export class AuthService {
       await vscode.env.openExternal(vscode.Uri.parse(loginUrl.toString()));
 
       const result = await tokenPromise;
+      this.pendingCancel = null; // Tokens received — cancel no longer possible
 
       await this.tokenStorage.setAccessToken(result.token);
       if (result.refreshToken) {
@@ -437,7 +470,8 @@ export class AuthService {
         environment: this.getEnvironment(),
       });
     } finally {
-      close();
+      this.pendingCancel = null;
+      cancel();
     }
   }
 

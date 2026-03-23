@@ -368,6 +368,10 @@ input::placeholder, textarea::placeholder {
   background-color: var(--vscode-button-secondaryHoverBackground);
 }
 
+.cancel-sign-in-btn {
+  width: 100%;
+}
+
 /* Hive server connection indicator */
 .hive-indicator {
   display: flex;

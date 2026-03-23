@@ -185,6 +185,7 @@ export default function App() {
         onOpenExternal={(url) => postMessage({ command: 'openExternal', payload: { url } })}
         onConnectToHive={(url) => postMessage({ command: 'connectToHive', payload: { url } })}
         onDisconnectHive={() => postMessage({ command: 'disconnectHive' })}
+        onCancelSignIn={() => postMessage({ command: 'cancelSignIn' })}
       />
       </>
     );

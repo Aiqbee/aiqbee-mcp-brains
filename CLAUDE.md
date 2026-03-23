@@ -8,47 +8,37 @@
 
 Work to senior developer standards. Fix problems immediately — don't defer with TODOs.
 
-## Brain Search Triggers
+## Knowledge Base (Aiqbee Brain via MCP)
 
-Before coding, search the Aiqbee Product Management Brain for relevant practices:
+If you have access to the **Aiqbee Product Development Brain** via MCP, search it before starting work — it contains detailed practices, patterns, lessons learned, and code review checklists for this project. Key search terms: `agentic planning protocol`, `VS Code extension`, `authentication`, `api client`, `code review checklist`, `lesson learned`, `cross-repository change requests`.
 
-| When you are... | Search for |
-|---|---|
-| Starting any task (3+ steps) | `agentic planning protocol` |
-| Making a UI change | `VS Code extension`, `UI pattern` |
-| Working with authentication | `authentication`, `MSAL`, `token` |
-| Creating or modifying API calls | `api client`, `service pattern` |
-| About to commit or create a PR | `code review checklist` |
-| Solving a difficult bug | `lesson learned`, `recipe`, `non-obvious fix` |
-| Making cross-repo changes | `cross-repository change requests` |
-| Setting up CI/CD | `CI/CD pipeline`, `release` |
+If the brain is not connected, the key practices are summarised below.
 
-## Brain Maintenance
+## Key Development Practices
 
-- **Bug fixed** — update or create a neuron noting the fix and pattern learned
-- **Feature added** — update the VS Code Extension product neuron
-- **New practice discovered** — create a Development Practice neuron
-- **Lesson learned** — create a Development Recipe neuron (problem → what didn't work → correct approach)
-- After any correction from user: proactively offer to add a lesson to the brain
-
-## MCP Connection
-
-The Aiqbee Product Development Brain is connected globally via user-level Claude settings. No project-level MCP config needed.
+- **Plan before coding** — for tasks with 3+ steps, outline your approach before writing code
+- **Self-review before commit** — check for dead code, duplicates, security issues, and adherence to patterns below
+- **Code review checklist** — no hardcoded secrets, proper error handling, tests for new logic, consistent naming
+- **Cross-repo changes** — document change requests in `docs/change-requests/` when backend changes are needed
+- **Lessons learned** — when fixing non-obvious bugs, document the problem, what didn't work, and the correct approach
 
 ## Git Workflow
 
 1. Branch from `develop` — `feature/<name>` or `fix/<name>`
 2. Self-review before commit (dead code, duplicates, bad practices)
 3. PR to `develop` — never push directly
-4. Never squash merge — `gh pr merge --merge --delete-branch`
+4. Wait for CodeRabbit review and CI/CD checks before merging
+5. Never squash merge — `gh pr merge --merge --delete-branch`
 
-## Quick Rules
+## Architecture Rules
 
 - VS Code CSS variables for theming (not MUI, not Tailwind)
-- Extension host handles all API calls (webview sends messages via postMessage)
-- VS Code SecretStorage for token persistence
+- Extension host handles all API calls (webview sends messages via `postMessage`)
+- VS Code `SecretStorage` for token persistence
 - Two env configs: `.env.eudev` (develop) / `.env.euprod` (master)
-- React useState/useReducer for webview state (no external state lib)
+- React `useState`/`useReducer` for webview state (no external state lib)
+- OAuth flows use PKCE + CSRF state validation
+- Connection abstraction (`ConnectionManager`) supports both cloud and self-hosted (Hive Server) backends
 
 ## Essential Commands
 
@@ -60,17 +50,11 @@ npm run watch                  # Watch extension (esbuild)
 cd webview-ui && npm run dev   # Vite dev server for webview
 npm run package:dev            # Package VSIX (dev env)
 npm run package:prod           # Package VSIX (prod env)
+npm test                       # Run tests (vitest)
 ```
 
 ## Publishing
 
-- **VSCE_PAT** is stored as an encrypted GitHub Actions secret (repo Settings → Secrets → Actions)
 - Marketplace publish is triggered by pushing a `v*` tag to master (see `.github/workflows/release.yml`)
 - To publish: merge to master, then `npm version patch && git push && git push --tags`
-- PAT was created in Azure DevOps under the Aiqbee organization — rotate annually
-
-## New Session Checklist
-
-1. Read `tasks/log.md` for recent context
-2. Read `tasks/todo.md` for current plan
-3. Search brain for relevant practices before starting work
+- The VS Code Marketplace PAT is stored as an encrypted GitHub Actions secret

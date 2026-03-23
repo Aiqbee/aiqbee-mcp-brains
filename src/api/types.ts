@@ -159,6 +159,7 @@ export type WebviewMessage =
   | { command: 'openExternal'; payload: { url: string } }
   | { command: 'connectToHive'; payload: { url: string } }
   | { command: 'disconnectHive' }
+  | { command: 'cancelSignIn' }
   | { command: 'ready' };
 
 export type ExtensionMessage =

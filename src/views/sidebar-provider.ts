@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import type { ConnectionManager } from '../connection/connection.js';
-import { AuthService, AuthStateError } from '../auth/auth-service.js';
+import { AuthService, AuthStateError, SignInCancelledError } from '../auth/auth-service.js';
 import { BrainService } from '../api/brain-service.js';
 import { NeuronService } from '../api/neuron-service.js';
 import { addMcpConnection } from '../mcp/mcp-config.js';
@@ -178,6 +178,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           break;
         }
 
+        case 'cancelSignIn': {
+          this.authService.cancelSignIn();
+          this.postMessage({ command: 'loading', payload: { loading: false, command: 'signIn' } });
+          break;
+        }
+
         case 'openExternal': {
           vscode.env.openExternal(vscode.Uri.parse(message.payload.url));
           break;
@@ -185,6 +191,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
+
+      // User-initiated cancellation — loading already cleared by cancelSignIn handler
+      if (err instanceof SignInCancelledError) {
+        return;
+      }
 
       // If the API returned 401 after refresh failed, sign out so the
       // webview redirects to the login page instead of showing an error.
