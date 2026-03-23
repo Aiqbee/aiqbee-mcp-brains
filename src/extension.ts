@@ -80,7 +80,10 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Proactive token refresh — run every 15 minutes to keep the session alive
   const REFRESH_INTERVAL_MS = 15 * 60 * 1000;
+  let refreshInProgress = false;
   const refreshTimer = setInterval(async () => {
+    if (refreshInProgress) { return; }
+    refreshInProgress = true;
     try {
       const state = await authService.initialize();
       if (state.authenticated) {
@@ -88,6 +91,8 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     } catch {
       // Refresh failed silently — the next API call will trigger 401 handling
+    } finally {
+      refreshInProgress = false;
     }
   }, REFRESH_INTERVAL_MS);
 
