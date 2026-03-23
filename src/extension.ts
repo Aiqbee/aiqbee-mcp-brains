@@ -47,8 +47,9 @@ export function activate(context: vscode.ExtensionContext): void {
           const fragment = uri.fragment;
           const params = new URLSearchParams(fragment);
           const accessToken = params.get('access_token');
+          const state = params.get('state') ?? undefined;
           if (accessToken) {
-            authService.handleGoogleCallback(accessToken).catch((err) => {
+            authService.handleGoogleCallback(accessToken, state).catch((err) => {
               vscode.window.showErrorMessage(`Google sign-in failed: ${err instanceof Error ? err.message : String(err)}`);
               // Fire auth state to clear loading spinner in sidebar
               authService.fireAuthStateChanged(false);

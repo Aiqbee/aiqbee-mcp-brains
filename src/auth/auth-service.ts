@@ -165,6 +165,7 @@ export class AuthService {
   private _onAuthStateChanged = new vscode.EventEmitter<{ authenticated: boolean; user?: UserDto; environment?: string }>();
   readonly onAuthStateChanged = this._onAuthStateChanged.event;
   private pendingCancel: (() => void) | null = null;
+  private pendingGoogleState: string | null = null;
 
   /** Emit auth state change externally (e.g. to clear loading on Google callback error) */
   fireAuthStateChanged(authenticated: boolean, user?: UserDto): void {
@@ -320,16 +321,25 @@ export class AuthService {
       vscode.Uri.parse('vscode://aiqbee.aiqbee-brain-manager/oauth/callback')
     );
 
+    const state = crypto.randomBytes(16).toString('hex');
+    this.pendingGoogleState = state;
+
     const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
     authUrl.searchParams.set('client_id', envConfig.googleClientId);
     authUrl.searchParams.set('redirect_uri', redirectUri.toString());
     authUrl.searchParams.set('response_type', 'token');
     authUrl.searchParams.set('scope', 'openid email profile');
+    authUrl.searchParams.set('state', state);
 
     await vscode.env.openExternal(vscode.Uri.parse(authUrl.toString()));
   }
 
-  async handleGoogleCallback(accessToken: string): Promise<void> {
+  async handleGoogleCallback(accessToken: string, state?: string): Promise<void> {
+    if (this.pendingGoogleState && state !== this.pendingGoogleState) {
+      this.pendingGoogleState = null;
+      throw new Error('Google OAuth state mismatch — possible CSRF attack');
+    }
+    this.pendingGoogleState = null;
     const response = await this.apiClient.postPublic<AuthResponseDto>('/api/auth/google', {
       accessToken,
     });
