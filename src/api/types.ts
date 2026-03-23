@@ -170,4 +170,6 @@ export type ExtensionMessage =
   | { command: 'error'; payload: { message: string; command?: string } }
   | { command: 'loading'; payload: { loading: boolean; command?: string } }
   | { command: 'emailVerificationRequired'; payload: { email: string } }
-  | { command: 'connectionChanged'; payload: { backendType: 'cloud' | 'hive'; label: string; authProviders: string[] } };
+  | { command: 'connectionChanged'; payload: { backendType: 'cloud' | 'hive'; label: string; authProviders: string[] } }
+  | { command: 'authActionRequired'; payload: { state: string; message: string; webAppUrl: string } }
+  | { command: 'subscriptionLimitReached'; payload: { errorCode: string; message: string; currentCount: number; maxAllowed: number; isHive: boolean } };

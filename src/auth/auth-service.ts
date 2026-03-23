@@ -4,7 +4,7 @@ import * as crypto from 'crypto';
 import { TokenStorage } from './token-storage.js';
 import { ApiClient } from '../api/api-client.js';
 import type { ConnectionManager } from '../connection/connection.js';
-import type { AuthResponseDto, UserDto, EmailSignInDto, EmailRegisterDto } from '../api/types.js';
+import type { AuthResponseDto, AuthState, UserDto, EmailSignInDto, EmailRegisterDto } from '../api/types.js';
 
 interface EnvConfig {
   apiUrl: string;
@@ -49,6 +49,7 @@ function startCallbackServer<T>(
   return new Promise((resolveSetup) => {
     let resolveResult: (value: T) => void;
     let rejectResult: (err: Error) => void;
+    let settled = false;
     const resultPromise = new Promise<T>((res, rej) => {
       resolveResult = res;
       rejectResult = rej;
@@ -61,11 +62,11 @@ function startCallbackServer<T>(
         try {
           const result = extractResult(url.searchParams);
           res.end(SUCCESS_HTML);
-          resolveResult(result);
+          if (!settled) { settled = true; resolveResult(result); }
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           res.end(`<html><body><h3>Sign-in failed</h3><p>${escapeHtml(message)}</p></body></html>`);
-          rejectResult(err instanceof Error ? err : new Error(message));
+          if (!settled) { settled = true; rejectResult(err instanceof Error ? err : new Error(message)); }
         }
       } else {
         res.writeHead(404);
@@ -82,7 +83,7 @@ function startCallbackServer<T>(
     // Auto-close after 2 minutes
     setTimeout(() => {
       server.close();
-      rejectResult(new Error(timeoutMessage));
+      if (!settled) { settled = true; rejectResult(new Error(timeoutMessage)); }
     }, 120_000);
   });
 }
@@ -135,6 +136,16 @@ function startHiveTokenServer(expectedState: string) {
     },
     'Hive Server authentication timed out',
   );
+}
+
+export class AuthStateError extends Error {
+  constructor(
+    message: string,
+    public readonly state: AuthState,
+  ) {
+    super(message);
+    this.name = 'AuthStateError';
+  }
 }
 
 export class AuthService {
@@ -436,12 +447,21 @@ export class AuthService {
   ): Promise<void> {
     if (response.state !== 'Active') {
       if (response.state === 'SignUpRequired') {
-        throw new Error('Account not found. Please create an account first.');
+        throw new AuthStateError(
+          'No account found. Please sign up at the Aiqbee web app first, then return here to sign in.',
+          'SignUpRequired',
+        );
       }
       if (response.state === 'PendingApproval') {
-        throw new Error('Your account is pending approval.');
+        throw new AuthStateError(
+          'Your account is pending approval by your organisation administrator.',
+          'PendingApproval',
+        );
       }
-      throw new Error(response.message || `Authentication failed: ${response.state}`);
+      throw new AuthStateError(
+        response.message || `Authentication failed: ${response.state}`,
+        response.state,
+      );
     }
 
     if (!response.accessToken) {
