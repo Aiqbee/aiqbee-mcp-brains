@@ -39,26 +39,7 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
   );
 
-  // Google OAuth URI handler
-  context.subscriptions.push(
-    vscode.window.registerUriHandler({
-      handleUri(uri: vscode.Uri): void {
-        if (uri.path === '/oauth/callback') {
-          const fragment = uri.fragment;
-          const params = new URLSearchParams(fragment);
-          const accessToken = params.get('access_token');
-          const state = params.get('state') ?? undefined;
-          if (accessToken) {
-            authService.handleGoogleCallback(accessToken, state).catch((err) => {
-              vscode.window.showErrorMessage(`Google sign-in failed: ${err instanceof Error ? err.message : String(err)}`);
-              // Fire auth state to clear loading spinner in sidebar
-              authService.fireAuthStateChanged(false);
-            });
-          }
-        }
-      },
-    }),
-  );
+
 
   // Commands
   context.subscriptions.push(

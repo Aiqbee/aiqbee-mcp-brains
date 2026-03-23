@@ -165,12 +165,6 @@ export class AuthService {
   private _onAuthStateChanged = new vscode.EventEmitter<{ authenticated: boolean; user?: UserDto; environment?: string }>();
   readonly onAuthStateChanged = this._onAuthStateChanged.event;
   private pendingCancel: (() => void) | null = null;
-  private pendingGoogleState: string | null = null;
-
-  /** Emit auth state change externally (e.g. to clear loading on Google callback error) */
-  fireAuthStateChanged(authenticated: boolean, user?: UserDto): void {
-    this._onAuthStateChanged.fire({ authenticated, user, environment: this.getEnvironment() });
-  }
 
   constructor(
     private readonly tokenStorage: TokenStorage,
@@ -316,34 +310,61 @@ export class AuthService {
     }
 
     const envConfig = getEnvConfig();
-
-    const redirectUri = await vscode.env.asExternalUri(
-      vscode.Uri.parse('vscode://aiqbee.aiqbee-brain-manager/oauth/callback')
-    );
-
+    const pkce = generatePKCE();
     const state = crypto.randomBytes(16).toString('hex');
-    this.pendingGoogleState = state;
 
-    const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-    authUrl.searchParams.set('client_id', envConfig.googleClientId);
-    authUrl.searchParams.set('redirect_uri', redirectUri.toString());
-    authUrl.searchParams.set('response_type', 'token');
-    authUrl.searchParams.set('scope', 'openid email profile');
-    authUrl.searchParams.set('state', state);
+    // Start localhost redirect server (same pattern as Entra)
+    const { port, resultPromise: codePromise, cancel } = await startCodeServer('/oauth/callback', state);
+    this.pendingCancel = cancel;
+    const redirectUri = `http://${LOOPBACK_HOST}:${port}/oauth/callback`;
 
-    await vscode.env.openExternal(vscode.Uri.parse(authUrl.toString()));
-  }
+    try {
+      const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+      authUrl.searchParams.set('client_id', envConfig.googleClientId);
+      authUrl.searchParams.set('redirect_uri', redirectUri);
+      authUrl.searchParams.set('response_type', 'code');
+      authUrl.searchParams.set('scope', 'openid email profile');
+      authUrl.searchParams.set('code_challenge', pkce.challenge);
+      authUrl.searchParams.set('code_challenge_method', 'S256');
+      authUrl.searchParams.set('state', state);
+      authUrl.searchParams.set('access_type', 'offline');
 
-  async handleGoogleCallback(accessToken: string, state?: string): Promise<void> {
-    if (this.pendingGoogleState && state !== this.pendingGoogleState) {
-      this.pendingGoogleState = null;
-      throw new Error('Google OAuth state mismatch — possible CSRF attack');
+      await vscode.env.openExternal(vscode.Uri.parse(authUrl.toString()));
+
+      // Wait for the authorization code
+      const code = await codePromise;
+      this.pendingCancel = null;
+
+      // Exchange code for tokens
+      const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: envConfig.googleClientId,
+          code,
+          redirect_uri: redirectUri,
+          grant_type: 'authorization_code',
+          code_verifier: pkce.verifier,
+        }).toString(),
+      });
+
+      if (!tokenResponse.ok) {
+        const errText = await tokenResponse.text();
+        throw new Error(`Google token exchange failed: ${errText}`);
+      }
+
+      const tokens = await tokenResponse.json() as { access_token: string; id_token?: string; refresh_token?: string };
+
+      // Send the access token to the Aiqbee backend
+      const response = await this.apiClient.postPublic<AuthResponseDto>('/api/auth/google', {
+        accessToken: tokens.access_token,
+      });
+
+      await this.handleAuthResponse(response, 'google');
+    } finally {
+      this.pendingCancel = null;
+      cancel();
     }
-    this.pendingGoogleState = null;
-    const response = await this.apiClient.postPublic<AuthResponseDto>('/api/auth/google', {
-      accessToken,
-    });
-    await this.handleAuthResponse(response, 'google');
   }
 
   async signInWithEmail(dto: EmailSignInDto): Promise<void> {

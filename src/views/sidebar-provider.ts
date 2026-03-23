@@ -23,10 +23,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     private readonly neuronService: NeuronService,
     private readonly openGraph: (brainId: string, brainName: string, canWrite: boolean) => void,
   ) {
-    // Forward auth state changes to webview and clear any pending loading state
+    // Forward auth state changes to webview
     this.authService.onAuthStateChanged((state) => {
       this.postMessage({ command: 'authStateChanged', payload: state });
-      this.postMessage({ command: 'loading', payload: { loading: false, command: 'signIn' } });
     });
   }
 
@@ -80,9 +79,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         case 'signInGoogle': {
           this.postMessage({ command: 'loading', payload: { loading: true, command: 'signIn' } });
           await this.authService.signInWithGoogle();
-          // loading cleared by authStateChanged listener on callback success,
-          // or by catch block on error. Don't clear here — signInWithGoogle
-          // returns immediately after opening the browser.
+          this.postMessage({ command: 'loading', payload: { loading: false, command: 'signIn' } });
           break;
         }
 
