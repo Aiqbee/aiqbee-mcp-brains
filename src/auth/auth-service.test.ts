@@ -248,7 +248,7 @@ describe('AuthService', () => {
       await expect(signInPromise).rejects.toThrow('No token received');
     });
 
-    it('throws AuthStateError when backend returns error=SignUpRequired', async () => {
+    it('throws AuthStateError(SignUpRequired) when backend returns error=account_not_found', async () => {
       const vscode = await import('vscode');
       const openExternalSpy = vi.spyOn(vscode.env, 'openExternal').mockResolvedValue(true);
 
@@ -263,9 +263,8 @@ describe('AuthService', () => {
       const port = Number(openedUrl.searchParams.get('redirect_port'));
       const state = openedUrl.searchParams.get('state')!;
 
-      // Backend redirects with structured error for no-account user
       await hitCallbackServer(port, '/oauth/callback', {
-        error: 'SignUpRequired',
+        error: 'account_not_found',
         state,
       });
 
@@ -273,7 +272,7 @@ describe('AuthService', () => {
       await expect(signInPromise).rejects.toThrow('No account found');
     });
 
-    it('throws AuthStateError when backend returns error=PendingApproval', async () => {
+    it('throws AuthStateError(PendingApproval) when backend returns error=account_inactive', async () => {
       const vscode = await import('vscode');
       const openExternalSpy = vi.spyOn(vscode.env, 'openExternal').mockResolvedValue(true);
 
@@ -289,12 +288,36 @@ describe('AuthService', () => {
       const state = openedUrl.searchParams.get('state')!;
 
       await hitCallbackServer(port, '/oauth/callback', {
-        error: 'PendingApproval',
+        error: 'account_inactive',
         state,
       });
 
       await expect(signInPromise).rejects.toThrow(AuthStateError);
       await expect(signInPromise).rejects.toThrow('pending approval');
+    });
+
+    it('throws AuthStateError(Disabled) when backend returns error=tenant_inactive', async () => {
+      const vscode = await import('vscode');
+      const openExternalSpy = vi.spyOn(vscode.env, 'openExternal').mockResolvedValue(true);
+
+      const signInPromise = authService.signInWithGoogle();
+      signInPromise.catch(() => {});
+
+      await vi.waitFor(() => {
+        expect(openExternalSpy).toHaveBeenCalledOnce();
+      });
+
+      const openedUrl = new URL(openExternalSpy.mock.calls[0][0].path);
+      const port = Number(openedUrl.searchParams.get('redirect_port'));
+      const state = openedUrl.searchParams.get('state')!;
+
+      await hitCallbackServer(port, '/oauth/callback', {
+        error: 'tenant_inactive',
+        state,
+      });
+
+      await expect(signInPromise).rejects.toThrow(AuthStateError);
+      await expect(signInPromise).rejects.toThrow('organisation account is inactive');
     });
   });
 
