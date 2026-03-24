@@ -428,6 +428,94 @@ describe('AuthService', () => {
       // Should NOT have stored any tokens
       expect(tokenStorage.setAccessToken).not.toHaveBeenCalled();
     });
+
+    it('handles integer state=3 (Active) from /api/accounts/signin', async () => {
+      const vscode = await import('vscode');
+      vi.spyOn(vscode.env, 'openExternal').mockResolvedValue(true);
+
+      const originalFetch = globalThis.fetch;
+      vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string, init?: any) => {
+        if (url.includes('localhost')) {
+          return originalFetch(url, init);
+        }
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            access_token: 'ms-access-token',
+            refresh_token: 'ms-refresh-token',
+          }),
+        });
+      }));
+
+      // Backend returns integer enum: Active = 3
+      (apiClient.postWithAuth as any).mockResolvedValue({
+        state: 3,
+        accessToken: 'aiqbee-jwt',
+        refreshToken: 'aiqbee-refresh',
+        user: { id: '1', givenName: 'Test', familyName: 'User', email: 'test@example.com' },
+      });
+
+      const signInPromise = authService.signInWithMicrosoft();
+
+      await vi.waitFor(() => {
+        expect(vscode.env.openExternal).toHaveBeenCalledOnce();
+      });
+
+      const openedUrl = new URL((vscode.env.openExternal as any).mock.calls[0][0].path);
+      const redirectUri = new URL(openedUrl.searchParams.get('redirect_uri')!);
+      const port = Number(redirectUri.port);
+      const state = openedUrl.searchParams.get('state')!;
+
+      await hitCallbackServer(port, '/oauth/callback', { code: 'auth-code', state });
+
+      await signInPromise;
+
+      expect(tokenStorage.setAccessToken).toHaveBeenCalledWith('aiqbee-jwt');
+      expect(tokenStorage.setRefreshToken).toHaveBeenCalledWith('aiqbee-refresh');
+      expect(tokenStorage.setAuthType).toHaveBeenCalledWith('microsoft');
+    });
+
+    it('handles integer state=0 (SignUp) from /api/accounts/signin as SignUpRequired', async () => {
+      const vscode = await import('vscode');
+      vi.spyOn(vscode.env, 'openExternal').mockResolvedValue(true);
+
+      const originalFetch = globalThis.fetch;
+      vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string, init?: any) => {
+        if (url.includes('localhost')) {
+          return originalFetch(url, init);
+        }
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            access_token: 'ms-access-token',
+            refresh_token: 'ms-refresh-token',
+          }),
+        });
+      }));
+
+      // Backend returns integer enum: SignUp = 0
+      (apiClient.postWithAuth as any).mockResolvedValue({
+        state: 0,
+      });
+
+      const signInPromise = authService.signInWithMicrosoft();
+      signInPromise.catch(() => {});
+
+      await vi.waitFor(() => {
+        expect(vscode.env.openExternal).toHaveBeenCalledOnce();
+      });
+
+      const openedUrl = new URL((vscode.env.openExternal as any).mock.calls[0][0].path);
+      const redirectUri = new URL(openedUrl.searchParams.get('redirect_uri')!);
+      const port = Number(redirectUri.port);
+      const state = openedUrl.searchParams.get('state')!;
+
+      await hitCallbackServer(port, '/oauth/callback', { code: 'auth-code', state });
+
+      await expect(signInPromise).rejects.toThrow(AuthStateError);
+      await expect(signInPromise).rejects.toThrow('No account found');
+      expect(tokenStorage.setAccessToken).not.toHaveBeenCalled();
+    });
   });
 
   describe('refreshToken', () => {
