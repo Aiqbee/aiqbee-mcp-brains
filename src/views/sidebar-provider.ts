@@ -209,7 +209,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
       // Auth state errors (SignUpRequired, PendingApproval) — send actionable message
       if (err instanceof AuthStateError) {
-        const webAppUrl = this.getWebAppUrl();
+        // Only show the "Sign up at web app" link for cloud — hive users
+        // manage accounts through their own admin, not the Aiqbee web app.
+        const webAppUrl = this.connectionManager.isHive() ? '' : this.getWebAppUrl();
         this.postMessage({
           command: 'authActionRequired',
           payload: { state: err.state, message: errorMessage, webAppUrl },
