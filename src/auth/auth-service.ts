@@ -126,21 +126,21 @@ function startBrokeredTokenServer(expectedState: string) {
       if (state !== expectedState) {
         throw new Error('OAuth state mismatch — possible CSRF attack');
       }
-      // Accept both naming conventions: hive uses token/refresh_token/user,
-      // cloud backend may use accessToken/refreshToken
-      // Check for structured error from backend (e.g. user has no account)
+      // Check for structured error from backend (e.g. user has no account).
+      // Maps backend error codes to extension AuthState values.
       const error = params.get('error');
       if (error) {
-        const AUTH_STATE_ERRORS: Record<string, string> = {
-          SignUpRequired: 'No account found. Please sign up at the Aiqbee web app first, then return here to sign in.',
-          PendingApproval: 'Your account is pending approval by your organisation administrator.',
-          Disabled: 'Your account has been disabled.',
+        const ERROR_TO_AUTH_STATE: Record<string, { state: AuthState; defaultMessage: string }> = {
+          account_not_found: { state: 'SignUpRequired', defaultMessage: 'No account found. Please sign up at the Aiqbee web app first, then return here to sign in.' },
+          account_inactive: { state: 'PendingApproval', defaultMessage: 'Your account is pending approval by your organisation administrator.' },
+          tenant_inactive: { state: 'Disabled', defaultMessage: 'Your organisation account is inactive. Please contact your administrator.' },
         };
-        const message = params.get('error_description') || AUTH_STATE_ERRORS[error];
-        if (message && error in AUTH_STATE_ERRORS) {
-          throw new AuthStateError(message, error as AuthState);
+        const mapping = ERROR_TO_AUTH_STATE[error];
+        if (mapping) {
+          const message = params.get('error_description') || mapping.defaultMessage;
+          throw new AuthStateError(message, mapping.state);
         }
-        throw new Error(message || error);
+        throw new Error(params.get('error_description') || error);
       }
       // Accept both naming conventions: hive uses token/refresh_token/user,
       // cloud backend may use accessToken/refreshToken
