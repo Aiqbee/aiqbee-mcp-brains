@@ -10,7 +10,7 @@ interface LoginPageProps {
   onSignInMicrosoft: () => void;
   onSignInGoogle: () => void;
   onSignInEmail: (email: string, password: string) => void;
-  onCreateAccount: () => void;
+  webAppUrl?: string;
   authActionState?: string;
   authActionMessage?: string;
   authActionWebAppUrl?: string;
@@ -31,7 +31,7 @@ export function LoginPage({
   onSignInMicrosoft,
   onSignInGoogle,
   onSignInEmail,
-  onCreateAccount,
+  webAppUrl,
   authActionState,
   authActionMessage,
   authActionWebAppUrl,
@@ -120,9 +120,16 @@ export function LoginPage({
         </div>
       )}
 
-      {!isHive && !authActionState && (
+      {!isHive && !authActionState && webAppUrl && (
         <div className="auth-info">
-          Already have a Microsoft or Google work account? Sign in directly — your Aiqbee account will be created automatically on first sign-in.
+          Don&apos;t have an account?{' '}
+          <button
+            className="link"
+            onClick={() => onOpenExternal(webAppUrl)}
+            style={{ background: 'none', border: 'none' }}
+          >
+            Sign up here
+          </button>
         </div>
       )}
 
@@ -262,14 +269,6 @@ export function LoginPage({
             </form>
           )}
 
-          <div style={{ textAlign: 'center' }}>
-            <span style={{ fontSize: 12, color: 'var(--vscode-descriptionForeground)' }}>
-              No account yet?{' '}
-            </span>
-            <button className="link" onClick={onCreateAccount} style={{ background: 'none', border: 'none' }}>
-              Create an email account
-            </button>
-          </div>
         </>
       )}
 

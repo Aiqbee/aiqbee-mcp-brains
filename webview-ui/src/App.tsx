@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useReducer, useState } from 'react';
 import { useVsCode, useMessageListener } from './hooks/useVsCode';
 import { LoginPage } from './pages/LoginPage';
-import { SignUpPage } from './pages/SignUpPage';
 import { BrainsPage } from './pages/BrainsPage';
 import { HelpPage } from './pages/HelpPage';
 import { PromptsPage } from './pages/PromptsPage';
@@ -14,16 +13,16 @@ interface UserDto {
 }
 
 interface AppState {
-  page: 'login' | 'signup' | 'brains';
+  page: 'login' | 'brains';
   authenticated: boolean;
   user?: UserDto;
   environment?: string;
   loading: boolean;
   error?: string;
-  verificationEmail?: string;
   backendType: 'cloud' | 'hive';
   hiveLabel?: string;
   authProviders: string[];
+  webAppUrl?: string;
   authActionState?: string;
   authActionMessage?: string;
   authActionWebAppUrl?: string;
@@ -31,12 +30,10 @@ interface AppState {
 
 type AppAction =
   | { type: 'AUTH_STATE'; authenticated: boolean; user?: UserDto; environment?: string }
-  | { type: 'SET_PAGE'; page: AppState['page'] }
   | { type: 'SET_LOADING'; loading: boolean }
   | { type: 'SET_ERROR'; error: string }
   | { type: 'CLEAR_ERROR' }
-  | { type: 'EMAIL_VERIFICATION_REQUIRED'; email: string }
-  | { type: 'CONNECTION_CHANGED'; backendType: 'cloud' | 'hive'; label: string; authProviders: string[] }
+  | { type: 'CONNECTION_CHANGED'; backendType: 'cloud' | 'hive'; label: string; authProviders: string[]; webAppUrl?: string }
   | { type: 'AUTH_ACTION_REQUIRED'; state: string; message: string; webAppUrl: string };
 
 function reducer(state: AppState, action: AppAction): AppState {
@@ -54,22 +51,19 @@ function reducer(state: AppState, action: AppAction): AppState {
         authActionMessage: undefined,
         authActionWebAppUrl: undefined,
       };
-    case 'SET_PAGE':
-      return { ...state, page: action.page, error: undefined, verificationEmail: undefined };
     case 'SET_LOADING':
       return { ...state, loading: action.loading };
     case 'SET_ERROR':
       return { ...state, error: action.error, loading: false };
     case 'CLEAR_ERROR':
       return { ...state, error: undefined, authActionState: undefined, authActionMessage: undefined, authActionWebAppUrl: undefined };
-    case 'EMAIL_VERIFICATION_REQUIRED':
-      return { ...state, verificationEmail: action.email, loading: false };
     case 'CONNECTION_CHANGED':
       return {
         ...state,
         backendType: action.backendType,
         hiveLabel: action.backendType === 'hive' ? action.label : undefined,
         authProviders: action.authProviders,
+        webAppUrl: action.webAppUrl,
         error: undefined,
       };
     case 'AUTH_ACTION_REQUIRED':
@@ -120,15 +114,13 @@ export default function App() {
         case 'error':
           dispatch({ type: 'SET_ERROR', error: message.payload.message });
           break;
-        case 'emailVerificationRequired':
-          dispatch({ type: 'EMAIL_VERIFICATION_REQUIRED', email: message.payload.email });
-          break;
         case 'connectionChanged':
           dispatch({
             type: 'CONNECTION_CHANGED',
             backendType: message.payload.backendType,
             label: message.payload.label,
             authProviders: message.payload.authProviders,
+            webAppUrl: message.payload.webAppUrl,
           });
           break;
         case 'authActionRequired':
@@ -147,8 +139,6 @@ export default function App() {
   useEffect(() => {
     postMessage({ command: 'ready' });
   }, [postMessage]);
-
-  const goToSignUp = useCallback(() => dispatch({ type: 'SET_PAGE', page: 'signup' }), []);
 
   if (state.loading && !state.authenticated && state.page === 'login') {
     return (
@@ -177,7 +167,7 @@ export default function App() {
         onSignInEmail={(email, password) =>
           postMessage({ command: 'signInEmail', payload: { email, password } })
         }
-        onCreateAccount={goToSignUp}
+        webAppUrl={state.webAppUrl}
         authActionState={state.authActionState}
         authActionMessage={state.authActionMessage}
         authActionWebAppUrl={state.authActionWebAppUrl}
@@ -186,23 +176,6 @@ export default function App() {
         onConnectToHive={(url) => postMessage({ command: 'connectToHive', payload: { url } })}
         onDisconnectHive={() => postMessage({ command: 'disconnectHive' })}
         onCancelSignIn={() => postMessage({ command: 'cancelSignIn' })}
-      />
-      </>
-    );
-  }
-
-  if (state.page === 'signup') {
-    return (
-      <>
-      <SignUpPage
-        loading={state.loading}
-        error={state.error}
-        verificationEmail={state.verificationEmail}
-        onRegister={(data) => postMessage({ command: 'register', payload: data })}
-        onBackToLogin={() => {
-          dispatch({ type: 'SET_PAGE', page: 'login' });
-          dispatch({ type: 'CLEAR_ERROR' });
-        }}
       />
       </>
     );
