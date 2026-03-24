@@ -4,7 +4,7 @@ import * as crypto from 'crypto';
 import { TokenStorage } from './token-storage.js';
 import { ApiClient } from '../api/api-client.js';
 import type { ConnectionManager } from '../connection/connection.js';
-import type { AuthResponseDto, AuthState, UserDto, EmailSignInDto, EmailRegisterDto } from '../api/types.js';
+import type { AuthResponseDto, AuthState, UserDto, EmailSignInDto } from '../api/types.js';
 
 interface EnvConfig {
   msalClientId: string;
@@ -319,21 +319,6 @@ export class AuthService {
   async signInWithEmail(dto: EmailSignInDto): Promise<void> {
     const response = await this.apiClient.postPublic<AuthResponseDto>('/api/auth/email/login', dto);
     await this.handleAuthResponse(response, 'email');
-  }
-
-  async register(dto: EmailRegisterDto): Promise<{ emailVerificationRequired: boolean }> {
-    const response = await this.apiClient.postPublic<AuthResponseDto>('/api/auth/email/register', dto);
-
-    // After email registration the backend requires email verification
-    // before the user can sign in. The response may not contain tokens.
-    if (!response.accessToken) {
-      // Registration succeeded but email verification is needed
-      return { emailVerificationRequired: true };
-    }
-
-    // If the backend does return tokens (unlikely for email reg), log in
-    await this.handleAuthResponse(response, 'email');
-    return { emailVerificationRequired: false };
   }
 
   async signOut(): Promise<void> {
