@@ -96,15 +96,6 @@ export interface EmailSignInDto {
   password: string;
 }
 
-export interface EmailRegisterDto {
-  email: string;
-  password: string;
-  givenName: string;
-  familyName: string;
-  tenantName: string;
-  jobTitle?: string;
-}
-
 // Graph data types
 export interface NeuronDto {
   id: string;
@@ -147,7 +138,6 @@ export type WebviewMessage =
   | { command: 'signInMicrosoft' }
   | { command: 'signInGoogle' }
   | { command: 'signInEmail'; payload: EmailSignInDto }
-  | { command: 'register'; payload: EmailRegisterDto }
   | { command: 'signOut' }
   | { command: 'getAuthState' }
   | { command: 'listBrains' }
@@ -170,7 +160,6 @@ export type ExtensionMessage =
   | { command: 'brainTemplatesLoaded'; payload: BrainTemplateDto[] }
   | { command: 'error'; payload: { message: string; command?: string } }
   | { command: 'loading'; payload: { loading: boolean; command?: string } }
-  | { command: 'emailVerificationRequired'; payload: { email: string } }
-  | { command: 'connectionChanged'; payload: { backendType: 'cloud' | 'hive'; label: string; authProviders: string[] } }
+  | { command: 'connectionChanged'; payload: { backendType: 'cloud' | 'hive'; label: string; authProviders: string[]; webAppUrl?: string } }
   | { command: 'authActionRequired'; payload: { state: string; message: string; webAppUrl: string } }
   | { command: 'subscriptionLimitReached'; payload: { errorCode: string; message: string; currentCount: number; maxAllowed: number; isHive: boolean } };

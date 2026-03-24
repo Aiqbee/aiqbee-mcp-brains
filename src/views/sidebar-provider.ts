@@ -64,6 +64,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
               backendType: currentConn.backendType,
               label: currentConn.label,
               authProviders: currentConn.authProviders,
+              webAppUrl: currentConn.backendType === 'hive' ? undefined : this.getWebAppUrl(),
             },
           });
           break;
@@ -87,16 +88,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           this.postMessage({ command: 'loading', payload: { loading: true, command: 'signIn' } });
           await this.authService.signInWithEmail(message.payload);
           this.postMessage({ command: 'loading', payload: { loading: false, command: 'signIn' } });
-          break;
-        }
-
-        case 'register': {
-          this.postMessage({ command: 'loading', payload: { loading: true, command: 'register' } });
-          const regResult = await this.authService.register(message.payload);
-          this.postMessage({ command: 'loading', payload: { loading: false, command: 'register' } });
-          if (regResult.emailVerificationRequired) {
-            this.postMessage({ command: 'emailVerificationRequired', payload: { email: message.payload.email } });
-          }
           break;
         }
 
@@ -148,6 +139,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
               backendType: conn.backendType,
               label: conn.label,
               authProviders: conn.authProviders,
+              webAppUrl: undefined,
             },
           });
           this.postMessage({ command: 'loading', payload: { loading: false, command: 'connectToHive' } });
@@ -164,6 +156,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
               backendType: cloudConn.backendType,
               label: cloudConn.label,
               authProviders: cloudConn.authProviders,
+              webAppUrl: this.getWebAppUrl(),
             },
           });
           break;
