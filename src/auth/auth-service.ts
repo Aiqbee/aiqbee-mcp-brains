@@ -7,19 +7,15 @@ import type { ConnectionManager } from '../connection/connection.js';
 import type { AuthResponseDto, AuthState, UserDto, EmailSignInDto, EmailRegisterDto } from '../api/types.js';
 
 interface EnvConfig {
-  apiUrl: string;
   msalClientId: string;
   entraScopes: string;
-  googleClientId: string;
 }
 
 function getEnvConfig(): EnvConfig {
   // Values injected at build time by esbuild from .env.eudev / .env.euprod
   return {
-    apiUrl: process.env.VITE_API_URL || 'https://api.aiqbee.com',
     msalClientId: process.env.VITE_MSAL_CLIENT_ID || '',
     entraScopes: process.env.VITE_ENTRA_SCOPES || '',
-    googleClientId: process.env.VITE_GOOGLE_CLIENT_ID || '',
   };
 }
 
@@ -115,32 +111,34 @@ function startCodeServer(redirectPath: string, expectedState: string) {
   );
 }
 
-interface HiveTokenResult {
+interface BrokeredTokenResult {
   token: string;
   refreshToken: string;
   user: string;
 }
 
-/** Start a localhost server to capture hive-server brokered auth tokens */
-function startHiveTokenServer(expectedState: string) {
-  return startCallbackServer<HiveTokenResult>(
+/** Start a localhost server to capture brokered auth tokens (cloud or hive) */
+function startBrokeredTokenServer(expectedState: string) {
+  return startCallbackServer<BrokeredTokenResult>(
     '/oauth/callback',
     (params) => {
       const state = params.get('state');
       if (state !== expectedState) {
         throw new Error('OAuth state mismatch — possible CSRF attack');
       }
-      const token = params.get('token');
+      // Accept both naming conventions: hive uses token/refresh_token/user,
+      // cloud backend may use accessToken/refreshToken
+      const token = params.get('token') || params.get('accessToken');
       if (token) {
         return {
           token,
-          refreshToken: params.get('refresh_token') || '',
+          refreshToken: params.get('refresh_token') || params.get('refreshToken') || '',
           user: params.get('user') || '',
         };
       }
-      throw new Error(params.get('error') || 'No token received from Hive Server');
+      throw new Error(params.get('error') || 'No token received');
     },
-    'Hive Server authentication timed out',
+    'Authentication timed out',
   );
 }
 
@@ -209,7 +207,7 @@ export class AuthService {
     this.cancelSignIn();
 
     if (this.connectionManager.isHive()) {
-      return this.signInViaHiveServer('entra');
+      return this.signInViaBrokeredAuth('entra');
     }
 
     const envConfig = getEnvConfig();
@@ -305,66 +303,10 @@ export class AuthService {
     // Cancel any in-progress sign-in to avoid orphaned callback servers
     this.cancelSignIn();
 
-    if (this.connectionManager.isHive()) {
-      return this.signInViaHiveServer('google');
-    }
-
-    const envConfig = getEnvConfig();
-    const pkce = generatePKCE();
-    const state = crypto.randomBytes(16).toString('hex');
-
-    // Start localhost redirect server (same pattern as Entra)
-    const { port, resultPromise: codePromise, cancel } = await startCodeServer('/oauth/callback', state);
-    this.pendingCancel = cancel;
-    const redirectUri = `http://${LOOPBACK_HOST}:${port}/oauth/callback`;
-
-    try {
-      const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-      authUrl.searchParams.set('client_id', envConfig.googleClientId);
-      authUrl.searchParams.set('redirect_uri', redirectUri);
-      authUrl.searchParams.set('response_type', 'code');
-      authUrl.searchParams.set('scope', 'openid email profile');
-      authUrl.searchParams.set('code_challenge', pkce.challenge);
-      authUrl.searchParams.set('code_challenge_method', 'S256');
-      authUrl.searchParams.set('state', state);
-      authUrl.searchParams.set('access_type', 'offline');
-
-      await vscode.env.openExternal(vscode.Uri.parse(authUrl.toString()));
-
-      // Wait for the authorization code
-      const code = await codePromise;
-      this.pendingCancel = null;
-
-      // Exchange code for tokens
-      const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          client_id: envConfig.googleClientId,
-          code,
-          redirect_uri: redirectUri,
-          grant_type: 'authorization_code',
-          code_verifier: pkce.verifier,
-        }).toString(),
-      });
-
-      if (!tokenResponse.ok) {
-        const errText = await tokenResponse.text();
-        throw new Error(`Google token exchange failed: ${errText}`);
-      }
-
-      const tokens = await tokenResponse.json() as { access_token: string; id_token?: string; refresh_token?: string };
-
-      // Send the access token to the Aiqbee backend
-      const response = await this.apiClient.postPublic<AuthResponseDto>('/api/auth/google', {
-        accessToken: tokens.access_token,
-      });
-
-      await this.handleAuthResponse(response, 'google');
-    } finally {
-      this.pendingCancel = null;
-      cancel();
-    }
+    // Google requires exact redirect_uri matches, so dynamic localhost ports
+    // don't work for direct OAuth. Use brokered auth for both cloud and hive:
+    // the backend handles Google OAuth and redirects back with JWT tokens.
+    return this.signInViaBrokeredAuth('google');
   }
 
   async signInWithEmail(dto: EmailSignInDto): Promise<void> {
@@ -399,8 +341,11 @@ export class AuthService {
     }
 
     try {
-      // Hive Server: refresh via hive-server's own endpoint
-      if (this.connectionManager.isHive()) {
+      const authType = await this.tokenStorage.getAuthType();
+
+      // Hive (any provider) and cloud Google both use brokered JWTs —
+      // refresh via the backend's vscode endpoint
+      if (this.connectionManager.isHive() || authType === 'google') {
         const response = await this.apiClient.postPublic<{ accessToken: string; refreshToken: string }>(
           '/api/vscode/auth/refresh',
           { refreshToken },
@@ -415,11 +360,8 @@ export class AuthService {
         return false;
       }
 
-      // Cloud: existing refresh logic
-      const authType = await this.tokenStorage.getAuthType();
-
+      // Cloud Microsoft: refresh via the MS token endpoint directly
       if (authType === 'microsoft') {
-        // For Microsoft, refresh via the MS token endpoint
         const envConfig = getEnvConfig();
         const tokenResponse = await fetch('https://login.microsoftonline.com/common/oauth2/v2.0/token', {
           method: 'POST',
@@ -446,7 +388,7 @@ export class AuthService {
         return false;
       }
 
-      // Email/Google refresh via Aiqbee API
+      // Cloud email: refresh via Aiqbee API
       const response = await this.apiClient.postPublic<AuthResponseDto>('/api/auth/refresh', {
         refreshToken,
       });
@@ -465,13 +407,14 @@ export class AuthService {
   }
 
   /**
-   * Brokered auth via Hive Server. Opens the hive-server's login page in the
-   * browser, which handles OAuth and redirects back to localhost with JWT tokens.
+   * Brokered auth via a backend server (cloud API or Hive Server). Opens the
+   * server's login page in the browser, which handles OAuth with the IdP and
+   * redirects back to localhost with JWT tokens.
    */
-  private async signInViaHiveServer(provider: 'entra' | 'google'): Promise<void> {
+  private async signInViaBrokeredAuth(provider: 'entra' | 'google'): Promise<void> {
     const conn = this.connectionManager.getConnection();
     const state = crypto.randomBytes(16).toString('hex');
-    const { port, resultPromise: tokenPromise, cancel } = await startHiveTokenServer(state);
+    const { port, resultPromise: tokenPromise, cancel } = await startBrokeredTokenServer(state);
     this.pendingCancel = cancel;
 
     try {
