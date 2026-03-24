@@ -128,6 +128,22 @@ function startBrokeredTokenServer(expectedState: string) {
       }
       // Accept both naming conventions: hive uses token/refresh_token/user,
       // cloud backend may use accessToken/refreshToken
+      // Check for structured error from backend (e.g. user has no account)
+      const error = params.get('error');
+      if (error) {
+        const AUTH_STATE_ERRORS: Record<string, string> = {
+          SignUpRequired: 'No account found. Please sign up at the Aiqbee web app first, then return here to sign in.',
+          PendingApproval: 'Your account is pending approval by your organisation administrator.',
+          Disabled: 'Your account has been disabled.',
+        };
+        const message = params.get('error_description') || AUTH_STATE_ERRORS[error];
+        if (message && error in AUTH_STATE_ERRORS) {
+          throw new AuthStateError(message, error as AuthState);
+        }
+        throw new Error(message || error);
+      }
+      // Accept both naming conventions: hive uses token/refresh_token/user,
+      // cloud backend may use accessToken/refreshToken
       const token = params.get('token') || params.get('accessToken');
       if (token) {
         return {
@@ -136,7 +152,7 @@ function startBrokeredTokenServer(expectedState: string) {
           user: params.get('user') || '',
         };
       }
-      throw new Error(params.get('error') || 'No token received');
+      throw new Error('No token received');
     },
     'Authentication timed out',
   );
@@ -274,25 +290,16 @@ export class AuthService {
         tokens.access_token,
       );
 
-      // Store the Aiqbee tokens (or the MS token if Aiqbee returns the same)
-      const accessToken = aiqbeeResponse.accessToken || tokens.access_token;
-      const refreshToken = aiqbeeResponse.refreshToken || tokens.refresh_token;
-
-      await this.tokenStorage.setAccessToken(accessToken);
-      if (refreshToken) {
-        await this.tokenStorage.setRefreshToken(refreshToken);
+      // Check for account state errors (SignUpRequired, PendingApproval, etc.)
+      // before storing tokens — fall back to MS tokens if backend doesn't
+      // return its own (existing behaviour for some Entra configurations).
+      if (!aiqbeeResponse.accessToken) {
+        aiqbeeResponse.accessToken = tokens.access_token;
       }
-      await this.tokenStorage.setAuthType('microsoft');
-
-      if (aiqbeeResponse.user) {
-        await this.tokenStorage.setUserJson(JSON.stringify(aiqbeeResponse.user));
+      if (!aiqbeeResponse.refreshToken && tokens.refresh_token) {
+        aiqbeeResponse.refreshToken = tokens.refresh_token;
       }
-
-      this._onAuthStateChanged.fire({
-        authenticated: true,
-        user: aiqbeeResponse.user,
-        environment: this.getEnvironment(),
-      });
+      await this.handleAuthResponse(aiqbeeResponse, 'microsoft');
     } finally {
       this.pendingCancel = null;
       cancel();

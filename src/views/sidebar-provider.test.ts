@@ -196,7 +196,7 @@ describe('SidebarProvider', () => {
   });
 
   describe('auth state errors', () => {
-    it('sends authActionRequired for SignUpRequired', async () => {
+    it('sends authActionRequired with webAppUrl for cloud SignUpRequired', async () => {
       (authService.signInWithMicrosoft as any).mockRejectedValue(
         new AuthStateError('No account found.', 'SignUpRequired'),
       );
@@ -207,7 +207,7 @@ describe('SidebarProvider', () => {
       const actionMsg = postedMessages.find((m) => m.command === 'authActionRequired');
       expect(actionMsg).toBeDefined();
       expect(actionMsg.payload.state).toBe('SignUpRequired');
-      expect(actionMsg.payload.webAppUrl).toBeDefined();
+      expect(actionMsg.payload.webAppUrl).toBeTruthy();
       // Should NOT send a generic error
       expect(postedMessages.filter((m) => m.command === 'error')).toHaveLength(0);
     });
@@ -223,6 +223,21 @@ describe('SidebarProvider', () => {
       const actionMsg = postedMessages.find((m) => m.command === 'authActionRequired');
       expect(actionMsg).toBeDefined();
       expect(actionMsg.payload.state).toBe('PendingApproval');
+    });
+
+    it('sends empty webAppUrl for hive SignUpRequired (no sign-up link)', async () => {
+      (connectionManager.isHive as any).mockReturnValue(true);
+      (authService.signInWithMicrosoft as any).mockRejectedValue(
+        new AuthStateError('No account found.', 'SignUpRequired'),
+      );
+
+      const handler = getMessageHandler(provider);
+      await handler({ command: 'signInMicrosoft' });
+
+      const actionMsg = postedMessages.find((m) => m.command === 'authActionRequired');
+      expect(actionMsg).toBeDefined();
+      expect(actionMsg.payload.state).toBe('SignUpRequired');
+      expect(actionMsg.payload.webAppUrl).toBe('');
     });
   });
 

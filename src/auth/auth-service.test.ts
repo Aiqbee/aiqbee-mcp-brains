@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { AuthService } from './auth-service.js';
+import * as http from 'http';
+import { AuthService, AuthStateError } from './auth-service.js';
 import { TokenStorage } from './token-storage.js';
 import type { ConnectionManager, Connection } from '../connection/connection.js';
 import type { ApiClient } from '../api/api-client.js';
@@ -54,7 +55,7 @@ function createMockConnectionManager(overrides?: Partial<Connection>): Connectio
 
 /**
  * Send a GET request to a localhost callback server and return the response status.
- * Used to simulate the backend redirecting to the extension's callback URL.
+ * Uses the http module directly so it is never intercepted by global fetch mocks.
  */
 async function hitCallbackServer(
   port: number,
@@ -65,8 +66,13 @@ async function hitCallbackServer(
   for (const [k, v] of Object.entries(params)) {
     url.searchParams.set(k, v);
   }
-  const res = await fetch(url.toString());
-  return res.status;
+  return new Promise<number>((resolve, reject) => {
+    http.get(url.toString(), (res) => {
+      // Consume the response body so the socket closes cleanly
+      res.resume();
+      resolve(res.statusCode ?? 0);
+    }).on('error', reject);
+  });
 }
 
 // --- Tests ---------------------------------------------------------------
@@ -241,6 +247,55 @@ describe('AuthService', () => {
 
       await expect(signInPromise).rejects.toThrow('No token received');
     });
+
+    it('throws AuthStateError when backend returns error=SignUpRequired', async () => {
+      const vscode = await import('vscode');
+      const openExternalSpy = vi.spyOn(vscode.env, 'openExternal').mockResolvedValue(true);
+
+      const signInPromise = authService.signInWithGoogle();
+      signInPromise.catch(() => {});
+
+      await vi.waitFor(() => {
+        expect(openExternalSpy).toHaveBeenCalledOnce();
+      });
+
+      const openedUrl = new URL(openExternalSpy.mock.calls[0][0].path);
+      const port = Number(openedUrl.searchParams.get('redirect_port'));
+      const state = openedUrl.searchParams.get('state')!;
+
+      // Backend redirects with structured error for no-account user
+      await hitCallbackServer(port, '/oauth/callback', {
+        error: 'SignUpRequired',
+        state,
+      });
+
+      await expect(signInPromise).rejects.toThrow(AuthStateError);
+      await expect(signInPromise).rejects.toThrow('No account found');
+    });
+
+    it('throws AuthStateError when backend returns error=PendingApproval', async () => {
+      const vscode = await import('vscode');
+      const openExternalSpy = vi.spyOn(vscode.env, 'openExternal').mockResolvedValue(true);
+
+      const signInPromise = authService.signInWithGoogle();
+      signInPromise.catch(() => {});
+
+      await vi.waitFor(() => {
+        expect(openExternalSpy).toHaveBeenCalledOnce();
+      });
+
+      const openedUrl = new URL(openExternalSpy.mock.calls[0][0].path);
+      const port = Number(openedUrl.searchParams.get('redirect_port'));
+      const state = openedUrl.searchParams.get('state')!;
+
+      await hitCallbackServer(port, '/oauth/callback', {
+        error: 'PendingApproval',
+        state,
+      });
+
+      await expect(signInPromise).rejects.toThrow(AuthStateError);
+      await expect(signInPromise).rejects.toThrow('pending approval');
+    });
   });
 
   describe('signInWithMicrosoft — cloud uses direct Entra OAuth (regression)', () => {
@@ -301,6 +356,54 @@ describe('AuthService', () => {
       await signInPromise;
 
       expect(tokenStorage.setAuthType).toHaveBeenCalledWith('microsoft');
+    });
+
+    it('throws AuthStateError when Aiqbee backend returns SignUpRequired for Microsoft', async () => {
+      const vscode = await import('vscode');
+      vi.spyOn(vscode.env, 'openExternal').mockResolvedValue(true);
+
+      // Mock fetch for MS token endpoint only — let localhost requests through
+      const originalFetch = globalThis.fetch;
+      vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string, init?: any) => {
+        if (url.includes('localhost')) {
+          return originalFetch(url, init);
+        }
+        // MS token endpoint
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            access_token: 'ms-access-token',
+            refresh_token: 'ms-refresh-token',
+          }),
+        });
+      }));
+
+      // Mock the Aiqbee backend returning SignUpRequired
+      (apiClient.postWithAuth as any).mockResolvedValue({
+        state: 'SignUpRequired',
+        message: 'No account found.',
+      });
+
+      const signInPromise = authService.signInWithMicrosoft();
+      signInPromise.catch(() => {});
+
+      await vi.waitFor(() => {
+        expect(vscode.env.openExternal).toHaveBeenCalledOnce();
+      });
+
+      // Parse port from the redirect_uri query param in the Entra auth URL
+      const openedUrl = new URL((vscode.env.openExternal as any).mock.calls[0][0].path);
+      const redirectUri = new URL(openedUrl.searchParams.get('redirect_uri')!);
+      const port = Number(redirectUri.port);
+      const state = openedUrl.searchParams.get('state')!;
+
+      // Hit the localhost callback with a code (simulating Entra redirect)
+      await hitCallbackServer(port, '/oauth/callback', { code: 'auth-code', state });
+
+      await expect(signInPromise).rejects.toThrow(AuthStateError);
+      await expect(signInPromise).rejects.toThrow('No account found');
+      // Should NOT have stored any tokens
+      expect(tokenStorage.setAccessToken).not.toHaveBeenCalled();
     });
   });
 
