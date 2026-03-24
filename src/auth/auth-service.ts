@@ -450,22 +450,36 @@ export class AuthService {
     response: AuthResponseDto,
     authType: 'microsoft' | 'google' | 'email',
   ): Promise<void> {
-    if (response.state !== 'Active') {
-      if (response.state === 'SignUpRequired') {
+    // Backend endpoints may return state as a C# enum integer instead of a
+    // string (e.g. /api/accounts/signin returns 3 for Active). Normalise to
+    // the string AuthState values the extension uses everywhere else.
+    const INT_TO_AUTH_STATE: Record<number, AuthState> = {
+      0: 'SignUpRequired',   // SignUp = 0
+      2: 'PendingApproval',  // PendingApproval = 2
+      3: 'Active',           // Active = 3
+      10: 'Disabled',        // Disabled = 10
+    };
+    const rawState = response.state;
+    const state: AuthState = typeof rawState === 'number'
+      ? INT_TO_AUTH_STATE[rawState] ?? `Unknown(${rawState})` as AuthState
+      : rawState;
+
+    if (state !== 'Active') {
+      if (state === 'SignUpRequired') {
         throw new AuthStateError(
           'No account found. Please sign up at the Aiqbee web app first, then return here to sign in.',
           'SignUpRequired',
         );
       }
-      if (response.state === 'PendingApproval') {
+      if (state === 'PendingApproval') {
         throw new AuthStateError(
           'Your account is pending approval by your organisation administrator.',
           'PendingApproval',
         );
       }
       throw new AuthStateError(
-        response.message || `Authentication failed: ${response.state}`,
-        response.state,
+        response.message || `Authentication failed: ${state}`,
+        state,
       );
     }
 

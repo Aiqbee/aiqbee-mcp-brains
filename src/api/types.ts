@@ -1,7 +1,7 @@
 // API DTOs — adapted from platform-brainbuilder/src/renderer/types/
 
 export interface AuthResponseDto {
-  state: AuthState;
+  state: AuthState | number;  // Backend may return C# enum int (e.g. 3 = Active)
   accessToken?: string;
   refreshToken?: string;
   user?: UserDto;
