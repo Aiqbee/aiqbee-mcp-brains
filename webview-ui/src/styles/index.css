@@ -15,12 +15,11 @@ body {
   padding: 0;
 }
 
+/* Fill the whole view at any width; individual forms cap their own width. */
 #root {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  max-width: 360px;
-  margin: 0 auto;
   width: 100%;
 }
 
@@ -151,123 +150,142 @@ input::placeholder, textarea::placeholder {
   margin: 8px 0;
 }
 
-/* Badge */
-.badge {
-  display: inline-block;
+/* Server cards (Account tab) */
+.server-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.server-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  min-width: 0;
+  border: 1px solid var(--vscode-sideBar-border, var(--vscode-panel-border, rgba(128,128,128,0.2)));
+  border-radius: 4px;
+}
+
+.server-card-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.server-card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.server-card-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.server-card-url,
+.server-card-user,
+.server-card-message,
+.server-card-note,
+.environment-note {
   font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  overflow-wrap: anywhere;
+}
+
+.server-status {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
   padding: 1px 6px;
   border-radius: 2px;
   background-color: var(--vscode-badge-background);
   color: var(--vscode-badge-foreground);
-  font-weight: 600;
 }
 
-/* Brain list */
-.brain-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.server-status-connected {
+  background-color: var(--vscode-testing-iconPassed, var(--vscode-badge-background));
+  color: var(--vscode-editor-background, var(--vscode-badge-foreground));
 }
 
-/* Brain row (compact list item) */
-.brain-row {
+.server-status-authExpired,
+.server-status-offline {
+  background-color: var(--vscode-inputValidation-warningBackground, var(--vscode-badge-background));
+  color: var(--vscode-foreground);
+}
+
+.server-status-unsupportedAuth,
+.server-status-error {
+  background-color: var(--vscode-inputValidation-errorBackground, var(--vscode-badge-background));
+  color: var(--vscode-foreground);
+}
+
+.server-card-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  padding: 6px 8px;
-  border-radius: 3px;
-  transition: background-color 0.1s;
 }
 
-.brain-row:hover {
-  background-color: var(--vscode-list-hoverBackground);
+.server-card-actions:empty {
+  display: none;
 }
 
-.brain-row-main {
+.server-card-actions .btn-secondary {
+  width: auto;
+}
+
+/* Sign-in controls stop growing on very wide views; the rest of the page fills the width. */
+.sign-in-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 420px;
+}
+
+.email-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.add-server-form {
+  max-width: 420px;
+}
+
+.add-server-row {
+  display: flex;
+  gap: 8px;
+}
+
+.add-server-row input {
   flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
 }
 
-.brain-row-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.brain-row-name {
-  font-weight: 600;
-  font-size: 13px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.brain-row-desc {
-  font-size: 11px;
-  color: var(--vscode-descriptionForeground);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.brain-row-stats {
-  font-size: 10px;
-  color: var(--vscode-descriptionForeground);
-  display: flex;
-  gap: 8px;
-}
-
-.brain-row-stat {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-
-/* Dialog overlay */
-.dialog-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-  padding: 16px;
-}
-
-.dialog {
-  background-color: var(--vscode-editorWidget-background, var(--vscode-editor-background));
-  border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
-  border-radius: 4px;
-  padding: 16px;
-  width: 100%;
-  max-width: 400px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-}
-
-.dialog-title {
-  font-weight: 600;
-  font-size: 14px;
-}
-
-.dialog-actions {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
-}
-
-.dialog-actions button {
+.add-server-row .btn-primary {
   width: auto;
+  flex-shrink: 0;
+}
+
+.environment-note span {
+  font-weight: 600;
+}
+
+.spinner-inline {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-width: 1.5px;
+  vertical-align: middle;
 }
 
 /* Error message */
@@ -359,41 +377,6 @@ input::placeholder, textarea::placeholder {
   background-color: var(--vscode-button-secondaryHoverBackground);
 }
 
-.auth-button-hive {
-  background-color: var(--vscode-button-secondaryBackground);
-  color: var(--vscode-button-secondaryForeground);
-}
-
-.auth-button-hive:hover {
-  background-color: var(--vscode-button-secondaryHoverBackground);
-}
-
-.cancel-sign-in-btn {
-  width: 100%;
-}
-
-/* Hive server connection indicator */
-.hive-indicator {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 8px;
-  background-color: var(--vscode-textBlockQuote-background, rgba(128,128,128,0.1));
-  border-radius: 3px;
-  text-align: center;
-}
-
-.hive-banner {
-  padding: 4px 8px;
-  font-size: 11px;
-  font-weight: 600;
-  text-align: center;
-  background-color: var(--vscode-textBlockQuote-background, rgba(128,128,128,0.1));
-  color: var(--vscode-descriptionForeground);
-  border-bottom: 1px solid var(--vscode-sideBar-border, var(--vscode-panel-border, rgba(128,128,128,0.2)));
-}
-
 .auth-action-banner {
   padding: 10px 12px;
   border-radius: 4px;
@@ -412,68 +395,6 @@ input::placeholder, textarea::placeholder {
 .auth-action-banner .link {
   font-size: 11px;
   margin-top: 4px;
-}
-
-.subscription-limit-banner {
-  padding: 10px 12px;
-  border-radius: 4px;
-  background-color: var(--vscode-inputValidation-warningBackground, rgba(200,150,50,0.15));
-  border: 1px solid var(--vscode-inputValidation-warningBorder, rgba(200,150,50,0.4));
-  font-size: 12px;
-  color: var(--vscode-foreground);
-}
-
-.subscription-limit-banner .limit-counts {
-  font-weight: 600;
-  margin-top: 4px;
-}
-
-.subscription-limit-banner .limit-action {
-  margin-top: 6px;
-  font-style: italic;
-  color: var(--vscode-descriptionForeground);
-}
-
-/* Toggle switch */
-.toggle-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.toggle {
-  width: 36px;
-  height: 18px;
-  background-color: var(--vscode-input-background);
-  border: 1px solid var(--vscode-input-border, rgba(128,128,128,0.3));
-  border-radius: 9px;
-  position: relative;
-  cursor: pointer;
-  transition: background-color 0.2s;
-  flex-shrink: 0;
-}
-
-.toggle.active {
-  background-color: var(--vscode-button-background);
-  border-color: var(--vscode-button-background);
-}
-
-.toggle::after {
-  content: '';
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background-color: var(--vscode-foreground);
-  transition: transform 0.2s;
-}
-
-.toggle.active::after {
-  transform: translateX(18px);
-  background-color: var(--vscode-button-foreground);
 }
 
 /* Link */
@@ -528,6 +449,7 @@ input::placeholder, textarea::placeholder {
 
 .tab-content {
   flex: 1;
+  min-width: 0;
   overflow-y: auto;
 }
 

@@ -1,283 +1,174 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { SidebarProvider } from './sidebar-provider.js';
-import { ApiRequestError } from '../api/api-client.js';
-import { AuthStateError } from '../auth/auth-service.js';
-import type { AuthService } from '../auth/auth-service.js';
-import type { BrainService } from '../api/brain-service.js';
-import type { NeuronService } from '../api/neuron-service.js';
-import type { ConnectionManager } from '../connection/connection.js';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as vscode from 'vscode';
+import { SidebarProvider } from './sidebar-provider.js';
+import { ConnectionManager, SERVERS_STORAGE_KEY, type ServerEntry } from '../connection/connection.js';
+import { SessionManager } from '../connection/session-manager.js';
+import { sessionSecretKey } from '../auth/token-storage.js';
+import { AuthStateError, SignInCancelledError } from '../auth/auth-service.js';
+import { createMemento, createSecrets, flush } from '../__mocks__/test-helpers.js';
 
-function createMockAuthService(): AuthService {
-  const emitter = new vscode.EventEmitter();
-  return {
-    onAuthStateChanged: emitter.event,
-    initialize: vi.fn().mockResolvedValue({ authenticated: true, user: { id: '1', givenName: 'Test', familyName: 'User', email: 'test@example.com' } }),
-    signInWithMicrosoft: vi.fn(),
-    signInWithGoogle: vi.fn(),
-    signInWithEmail: vi.fn(),
-    register: vi.fn(),
-    signOut: vi.fn(),
-    refreshToken: vi.fn(),
-    getEnvironment: vi.fn().mockReturnValue('development'),
-    dispose: vi.fn(),
-  } as unknown as AuthService;
-}
+const HIVE: ServerEntry = {
+  id: 'hive-1',
+  kind: 'hive',
+  label: 'Team Hive',
+  baseUrl: 'https://hive.example.com',
+  mcpBaseUrl: 'https://hive.example.com',
+  authProviders: ['entra'],
+  origin: 'user',
+  addedAt: '2026-01-01T00:00:00.000Z',
+};
 
-function createMockConnectionManager(): ConnectionManager {
-  return {
-    getConnection: vi.fn().mockReturnValue({
-      backendType: 'cloud',
-      baseUrl: 'https://api.aiqbee.com',
-      mcpBaseUrl: 'https://mcp.aiqbee.com',
-      authProviders: ['entra', 'google', 'email'],
-      label: 'Aiqbee Cloud',
-    }),
-    isHive: vi.fn().mockReturnValue(false),
-    connectToHive: vi.fn(),
-    connectToCloud: vi.fn(),
-    disconnect: vi.fn(),
-    dispose: vi.fn(),
-  } as unknown as ConnectionManager;
-}
-
-function createMockBrainService(): BrainService {
-  return {
-    listBrains: vi.fn().mockResolvedValue([]),
-    createBrain: vi.fn(),
-    getBrainTemplates: vi.fn().mockResolvedValue([]),
-  } as unknown as BrainService;
-}
-
-function createMockNeuronService(): NeuronService {
-  return {
-    getBrainCounts: vi.fn(),
-  } as unknown as NeuronService;
-}
-
-/**
- * Access the private handleMessage method for testing.
- * The SidebarProvider processes webview messages through this handler.
- */
-function getMessageHandler(provider: SidebarProvider): (message: any) => Promise<void> {
+/** The provider's private message handler, which the webview drives through postMessage. */
+function handlerOf(provider: SidebarProvider): (message: any) => Promise<void> {
   return (provider as any).handleMessage.bind(provider);
 }
 
 describe('SidebarProvider', () => {
-  let authService: AuthService;
-  let connectionManager: ConnectionManager;
-  let brainService: BrainService;
-  let neuronService: NeuronService;
+  let registry: ConnectionManager;
+  let sessions: SessionManager;
   let provider: SidebarProvider;
-  let postedMessages: any[];
+  let posted: any[];
+  let handle: (message: any) => Promise<void>;
 
-  beforeEach(() => {
-    vi.clearAllMocks();
-    authService = createMockAuthService();
-    connectionManager = createMockConnectionManager();
-    brainService = createMockBrainService();
-    neuronService = createMockNeuronService();
-
-    provider = new SidebarProvider(
-      vscode.Uri.file('/test') as any,
-      connectionManager,
-      authService,
-      brainService,
-      neuronService,
-      vi.fn(),
-    );
-
-    // Capture posted messages by mocking the private view
-    postedMessages = [];
-    (provider as any).view = {
-      webview: {
-        postMessage: (msg: any) => postedMessages.push(msg),
-      },
-    };
+  beforeEach(async () => {
+    process.env.VITE_API_URL = 'https://api.aiqbee.com';
+    registry = new ConnectionManager(createMemento({ [SERVERS_STORAGE_KEY]: [HIVE] }) as any);
+    sessions = new SessionManager(registry, createSecrets({
+      [sessionSecretKey('cloud')]: JSON.stringify({ accessToken: 'c', user: { givenName: 'A', familyName: 'B', email: 'a@b.c' } }),
+    }));
+    await sessions.initialize();
+    provider = new SidebarProvider({ fsPath: '/ext' } as any, sessions, 'https://app.aiqbee.com', () => 'production');
+    posted = [];
+    (provider as any).view = { webview: { postMessage: (m: unknown) => { posted.push(m); return Promise.resolve(true); } } };
+    handle = handlerOf(provider);
   });
 
-  describe('401 auto-signout', () => {
-    it('signs out and redirects to login when API returns 401', async () => {
-      (brainService.listBrains as any).mockRejectedValue(
-        new ApiRequestError('Authentication expired. Please sign in again.', 401),
-      );
-
-      const handler = getMessageHandler(provider);
-      await handler({ command: 'listBrains' });
-
-      expect(authService.signOut).toHaveBeenCalledOnce();
-      // Should NOT send a generic error message — signOut fires authStateChanged
-      const errorMessages = postedMessages.filter((m) => m.command === 'error');
-      expect(errorMessages).toHaveLength(0);
-    });
-
-    it('sends error message for non-401 API errors', async () => {
-      (brainService.listBrains as any).mockRejectedValue(
-        new ApiRequestError('Server error', 500, 'Internal Server Error'),
-      );
-
-      const handler = getMessageHandler(provider);
-      await handler({ command: 'listBrains' });
-
-      expect(authService.signOut).not.toHaveBeenCalled();
-      const errorMessages = postedMessages.filter((m) => m.command === 'error');
-      expect(errorMessages).toHaveLength(1);
-      expect(errorMessages[0].payload.message).toBe('Server error');
-    });
-
-    it('sends error message for non-ApiRequestError exceptions', async () => {
-      (brainService.listBrains as any).mockRejectedValue(
-        new Error('Network timeout'),
-      );
-
-      const handler = getMessageHandler(provider);
-      await handler({ command: 'listBrains' });
-
-      expect(authService.signOut).not.toHaveBeenCalled();
-      const errorMessages = postedMessages.filter((m) => m.command === 'error');
-      expect(errorMessages).toHaveLength(1);
-      expect(errorMessages[0].payload.message).toBe('Network timeout');
-    });
+  afterEach(() => {
+    provider.dispose();
+    sessions.dispose();
+    registry.dispose();
+    vi.restoreAllMocks();
   });
 
-  describe('ready / getAuthState', () => {
-    it('sends authStateChanged and connectionChanged on ready', async () => {
-      const handler = getMessageHandler(provider);
-      await handler({ command: 'ready' });
+  const last = (command: string) => [...posted].reverse().find((m) => m.command === command);
 
-      expect(authService.initialize).toHaveBeenCalledOnce();
-      const authMsg = postedMessages.find((m) => m.command === 'authStateChanged');
-      const connMsg = postedMessages.find((m) => m.command === 'connectionChanged');
-      expect(authMsg).toBeDefined();
-      expect(connMsg).toBeDefined();
-      expect(connMsg.payload.backendType).toBe('cloud');
-    });
+  it('sends every server with its status on ready', async () => {
+    await handle({ command: 'ready' });
+
+    const { servers, environment } = last('serversChanged').payload;
+    expect(environment).toBe('production');
+    expect(servers).toEqual([
+      expect.objectContaining({
+        id: 'cloud', kind: 'cloud', status: 'connected', removable: false,
+        user: { givenName: 'A', familyName: 'B', email: 'a@b.c' },
+        signUpUrl: 'https://app.aiqbee.com/signup',
+      }),
+      expect.objectContaining({ id: 'hive-1', kind: 'hive', status: 'signedOut', removable: true, signUpUrl: undefined }),
+    ]);
   });
 
-  describe('hive connection', () => {
-    it('connects to hive and sends connectionChanged', async () => {
-      const hiveConn = {
-        backendType: 'hive' as const,
-        baseUrl: 'https://hive.company.com',
-        mcpBaseUrl: 'https://hive.company.com',
-        authProviders: ['entra'],
-        label: 'hive.company.com',
-      };
-      (connectionManager.connectToHive as any).mockResolvedValue(hiveConn);
-
-      const handler = getMessageHandler(provider);
-      await handler({ command: 'connectToHive', payload: { url: 'https://hive.company.com' } });
-
-      expect(connectionManager.connectToHive).toHaveBeenCalledWith('https://hive.company.com');
-      expect(authService.signOut).toHaveBeenCalledOnce();
-      const connMsg = postedMessages.find((m) => m.command === 'connectionChanged');
-      expect(connMsg.payload.backendType).toBe('hive');
-      expect(connMsg.payload.label).toBe('hive.company.com');
-    });
-
-    it('disconnects from hive and switches to cloud', async () => {
-      const cloudConn = {
-        backendType: 'cloud' as const,
-        baseUrl: 'https://api.aiqbee.com',
-        mcpBaseUrl: 'https://mcp.aiqbee.com',
-        authProviders: ['entra', 'google', 'email'],
-        label: 'Aiqbee Cloud',
-      };
-      (connectionManager.getConnection as any).mockReturnValue(cloudConn);
-
-      const handler = getMessageHandler(provider);
-      await handler({ command: 'disconnectHive' });
-
-      expect(connectionManager.connectToCloud).toHaveBeenCalledOnce();
-      expect(authService.signOut).toHaveBeenCalledOnce();
-      const connMsg = postedMessages.find((m) => m.command === 'connectionChanged');
-      expect(connMsg.payload.backendType).toBe('cloud');
-    });
+  it('does not post before the webview is ready', async () => {
+    await sessions.require('hive-1').signOut();
+    expect(posted).toEqual([]);
   });
 
-  describe('auth state errors', () => {
-    it('sends authActionRequired with webAppUrl for cloud SignUpRequired', async () => {
-      (authService.signInWithMicrosoft as any).mockRejectedValue(
-        new AuthStateError('No account found.', 'SignUpRequired'),
-      );
+  it('pushes updates when a session changes', async () => {
+    await handle({ command: 'ready' });
+    posted = [];
 
-      const handler = getMessageHandler(provider);
-      await handler({ command: 'signInMicrosoft' });
+    await sessions.require('cloud').signOut();
 
-      const actionMsg = postedMessages.find((m) => m.command === 'authActionRequired');
-      expect(actionMsg).toBeDefined();
-      expect(actionMsg.payload.state).toBe('SignUpRequired');
-      expect(actionMsg.payload.webAppUrl).toBeTruthy();
-      // Should NOT send a generic error
-      expect(postedMessages.filter((m) => m.command === 'error')).toHaveLength(0);
-    });
-
-    it('sends authActionRequired for PendingApproval', async () => {
-      (authService.signInWithMicrosoft as any).mockRejectedValue(
-        new AuthStateError('Pending approval.', 'PendingApproval'),
-      );
-
-      const handler = getMessageHandler(provider);
-      await handler({ command: 'signInMicrosoft' });
-
-      const actionMsg = postedMessages.find((m) => m.command === 'authActionRequired');
-      expect(actionMsg).toBeDefined();
-      expect(actionMsg.payload.state).toBe('PendingApproval');
-    });
-
-    it('sends empty webAppUrl for hive SignUpRequired (no sign-up link)', async () => {
-      (connectionManager.isHive as any).mockReturnValue(true);
-      (authService.signInWithMicrosoft as any).mockRejectedValue(
-        new AuthStateError('No account found.', 'SignUpRequired'),
-      );
-
-      const handler = getMessageHandler(provider);
-      await handler({ command: 'signInMicrosoft' });
-
-      const actionMsg = postedMessages.find((m) => m.command === 'authActionRequired');
-      expect(actionMsg).toBeDefined();
-      expect(actionMsg.payload.state).toBe('SignUpRequired');
-      expect(actionMsg.payload.webAppUrl).toBe('');
-    });
+    expect(last('serversChanged').payload.servers[0].status).toBe('signedOut');
   });
 
-  describe('subscription limit errors', () => {
-    it('sends subscriptionLimitReached for MAX_BRAINS_EXCEEDED', async () => {
-      const body = JSON.stringify({
-        errorCode: 'MAX_BRAINS_EXCEEDED',
-        message: 'Upgrade your subscription',
-        currentCount: 20,
-        maxAllowed: 20,
-      });
-      (brainService.createBrain as any).mockRejectedValue(
-        new ApiRequestError('Bad Request', 400, body),
-      );
+  it('routes sign-in to the session named by serverId', async () => {
+    const hive = vi.spyOn(sessions.require('hive-1'), 'signIn').mockResolvedValue();
+    const cloud = vi.spyOn(sessions.require('cloud'), 'signIn').mockResolvedValue();
 
-      const handler = getMessageHandler(provider);
-      await handler({ command: 'createBrain', payload: { name: 'Test' } });
+    await handle({ command: 'signIn', payload: { serverId: 'hive-1', provider: 'entra' } });
 
-      const limitMsg = postedMessages.find((m) => m.command === 'subscriptionLimitReached');
-      expect(limitMsg).toBeDefined();
-      expect(limitMsg.payload.errorCode).toBe('MAX_BRAINS_EXCEEDED');
-      expect(limitMsg.payload.currentCount).toBe(20);
-      expect(limitMsg.payload.maxAllowed).toBe(20);
-      expect(limitMsg.payload.isHive).toBe(false);
-      // Should NOT send a generic error
-      expect(postedMessages.filter((m) => m.command === 'error')).toHaveLength(0);
+    expect(hive).toHaveBeenCalledWith('entra');
+    expect(cloud).not.toHaveBeenCalled();
+  });
+
+  it('routes email sign-in with its credentials', async () => {
+    const email = vi.spyOn(sessions.require('cloud'), 'signInWithEmail').mockResolvedValue();
+
+    await handle({ command: 'signInEmail', payload: { serverId: 'cloud', email: 'x@y.z', password: 'pw' } });
+
+    expect(email).toHaveBeenCalledWith({ email: 'x@y.z', password: 'pw' });
+  });
+
+  it('signs out only the named server', async () => {
+    await handle({ command: 'signOut', payload: { serverId: 'cloud' } });
+
+    expect(sessions.require('cloud').status).toBe('signedOut');
+    expect(sessions.require('hive-1').status).toBe('signedOut');
+  });
+
+  it('returns an error message for an unknown serverId', async () => {
+    await handle({ command: 'signOut', payload: { serverId: 'nope' } });
+
+    expect(last('error').payload).toEqual({ message: 'That server is no longer configured.', serverId: 'nope' });
+  });
+
+  it('shows an account action with the sign-up page for cloud only', async () => {
+    vi.spyOn(sessions.require('cloud'), 'signIn').mockRejectedValue(new AuthStateError('No account', 'SignUpRequired'));
+    vi.spyOn(sessions.require('hive-1'), 'signIn').mockRejectedValue(new AuthStateError('No account', 'SignUpRequired'));
+
+    await handle({ command: 'signIn', payload: { serverId: 'cloud', provider: 'google' } });
+    expect(last('authActionRequired').payload).toEqual({
+      serverId: 'cloud', state: 'SignUpRequired', message: 'No account', signUpUrl: 'https://app.aiqbee.com/signup',
     });
 
-    it('sends generic error for non-limit 400 errors', async () => {
-      (brainService.createBrain as any).mockRejectedValue(
-        new ApiRequestError('Validation failed', 400, '{"errors":["name required"]}'),
-      );
+    await handle({ command: 'signIn', payload: { serverId: 'hive-1', provider: 'entra' } });
+    expect(last('authActionRequired').payload.signUpUrl).toBeUndefined();
+  });
 
-      const handler = getMessageHandler(provider);
-      await handler({ command: 'createBrain', payload: { name: '' } });
+  it('stays quiet when the user cancels a sign-in', async () => {
+    vi.spyOn(sessions.require('hive-1'), 'signIn').mockRejectedValue(new SignInCancelledError());
 
-      const limitMsg = postedMessages.find((m) => m.command === 'subscriptionLimitReached');
-      expect(limitMsg).toBeUndefined();
-      const errorMsg = postedMessages.find((m) => m.command === 'error');
-      expect(errorMsg).toBeDefined();
-    });
+    await handle({ command: 'signIn', payload: { serverId: 'hive-1', provider: 'entra' } });
+
+    expect(last('error')).toBeUndefined();
+  });
+
+  it('reports other sign-in failures against the server', async () => {
+    vi.spyOn(sessions.require('hive-1'), 'signIn').mockRejectedValue(new Error('Token exchange failed'));
+
+    await handle({ command: 'signIn', payload: { serverId: 'hive-1', provider: 'entra' } });
+
+    expect(last('error').payload).toEqual({ message: 'Token exchange failed', serverId: 'hive-1' });
+  });
+
+  it('hands add and remove to the commands so they share one flow', async () => {
+    const exec = vi.spyOn(vscode.commands, 'executeCommand').mockResolvedValue(undefined);
+
+    await handle({ command: 'addServer', payload: { url: 'hive2.example.com' } });
+    await handle({ command: 'removeServer', payload: { serverId: 'hive-1' } });
+
+    expect(exec).toHaveBeenCalledWith('aiqbee.addServer', 'hive2.example.com');
+    expect(exec).toHaveBeenCalledWith('aiqbee.removeServer', 'hive-1');
+  });
+
+  it('opens only web links', async () => {
+    const open = vi.spyOn(vscode.env, 'openExternal').mockResolvedValue(true);
+
+    await handle({ command: 'openExternal', payload: { url: 'https://app.aiqbee.com/signup' } });
+    await handle({ command: 'openExternal', payload: { url: 'command:workbench.action.terminal.new' } });
+
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(last('error').payload.message).toBe('Only web links can be opened.');
+  });
+
+  it('opens the email form once the webview is ready', async () => {
+    vi.spyOn(vscode.commands, 'executeCommand').mockResolvedValue(undefined);
+
+    provider.showEmailSignIn('cloud');
+    expect(last('showEmailSignIn')).toBeUndefined();
+
+    await handle({ command: 'ready' });
+    await flush();
+    expect(last('showEmailSignIn').payload).toEqual({ serverId: 'cloud' });
   });
 });

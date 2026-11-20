@@ -2,8 +2,8 @@ import * as vscode from 'vscode';
 import * as http from 'http';
 import * as crypto from 'crypto';
 import { TokenStorage } from './token-storage.js';
-import { ApiClient } from '../api/api-client.js';
-import type { ConnectionManager } from '../connection/connection.js';
+import { ApiClient, ApiRequestError, type RefreshResult } from '../api/api-client.js';
+import type { ServerEntry } from '../connection/connection.js';
 import type { AuthResponseDto, AuthState, UserDto, EmailSignInDto } from '../api/types.js';
 
 interface EnvConfig {
@@ -158,6 +158,11 @@ function startBrokeredTokenServer(expectedState: string) {
   );
 }
 
+/** 4xx means the server refused the refresh token; 5xx means it is failing and may recover. */
+function classifyHttpFailure(status: number): RefreshResult {
+  return status >= 400 && status < 500 ? 'rejected' : 'unreachable';
+}
+
 export class SignInCancelledError extends Error {
   constructor() {
     super('Sign-in cancelled');
@@ -180,10 +185,14 @@ export class AuthService {
   readonly onAuthStateChanged = this._onAuthStateChanged.event;
   private pendingCancel: (() => void) | null = null;
 
+  /**
+   * @param getEntry Returns the current entry for the server this service signs in to.
+   *   A getter, because the entry can change (rename, rediscovery) while the service lives.
+   */
   constructor(
+    private readonly getEntry: () => ServerEntry,
     private readonly tokenStorage: TokenStorage,
     private readonly apiClient: ApiClient,
-    private readonly connectionManager: ConnectionManager,
   ) {}
 
   /** Cancel any in-progress sign-in flow (closes the callback server). */
@@ -201,28 +210,18 @@ export class AuthService {
 
   async initialize(): Promise<{ authenticated: boolean; user?: UserDto; environment?: string }> {
     const environment = this.getEnvironment();
-    const hasTokens = await this.tokenStorage.hasTokens();
-    if (!hasTokens) {
+    const session = await this.tokenStorage.getSession();
+    if (!session) {
       return { authenticated: false, environment };
     }
-
-    try {
-      const userJson = await this.tokenStorage.getUserJson();
-      if (userJson) {
-        const user = JSON.parse(userJson) as UserDto;
-        return { authenticated: true, user, environment };
-      }
-      return { authenticated: true, environment };
-    } catch {
-      return { authenticated: true, environment };
-    }
+    return { authenticated: true, user: session.user, environment };
   }
 
   async signInWithMicrosoft(): Promise<void> {
     // Cancel any in-progress sign-in to avoid orphaned callback servers
     this.cancelSignIn();
 
-    if (this.connectionManager.isHive()) {
+    if (this.getEntry().kind === 'hive') {
       return this.signInViaBrokeredAuth('entra');
     }
 
@@ -322,80 +321,88 @@ export class AuthService {
   }
 
   async signOut(): Promise<void> {
+    this.cancelSignIn();
     await this.tokenStorage.clear();
     this._onAuthStateChanged.fire({ authenticated: false, environment: this.getEnvironment() });
   }
 
-  async refreshToken(): Promise<boolean> {
-    const refreshToken = await this.tokenStorage.getRefreshToken();
-    if (!refreshToken) {
-      return false;
+  /**
+   * Refresh the access token. Returns 'rejected' when the server refuses the
+   * refresh token (the session is over) and 'unreachable' when the server
+   * could not be reached or failed, so an outage is not mistaken for expiry.
+   */
+  async refreshToken(): Promise<RefreshResult> {
+    const session = await this.tokenStorage.getSession();
+    if (!session?.refreshToken) {
+      return 'rejected';
     }
+    const { refreshToken, authType } = session;
 
     try {
-      const authType = await this.tokenStorage.getAuthType();
-
       // Hive (any provider) and cloud Google both use brokered JWTs —
       // refresh via the backend's vscode endpoint
-      if (this.connectionManager.isHive() || authType === 'google') {
+      if (this.getEntry().kind === 'hive' || authType === 'google') {
         const response = await this.apiClient.postPublic<{ accessToken: string; refreshToken: string }>(
           '/api/vscode/auth/refresh',
           { refreshToken },
         );
-        if (response.accessToken) {
-          await this.tokenStorage.setAccessToken(response.accessToken);
-          if (response.refreshToken) {
-            await this.tokenStorage.setRefreshToken(response.refreshToken);
-          }
-          return true;
-        }
-        return false;
+        return this.storeRefreshed(refreshToken, response.accessToken, response.refreshToken);
       }
 
       // Cloud Microsoft: refresh via the MS token endpoint directly
       if (authType === 'microsoft') {
         const envConfig = getEnvConfig();
-        const tokenResponse = await fetch('https://login.microsoftonline.com/common/oauth2/v2.0/token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({
-            client_id: envConfig.msalClientId,
-            refresh_token: refreshToken,
-            grant_type: 'refresh_token',
-            scope: `openid profile email offline_access ${envConfig.entraScopes}`,
-          }).toString(),
-        });
-
-        if (tokenResponse.ok) {
-          const tokens = await tokenResponse.json() as {
-            access_token: string;
-            refresh_token?: string;
-          };
-          await this.tokenStorage.setAccessToken(tokens.access_token);
-          if (tokens.refresh_token) {
-            await this.tokenStorage.setRefreshToken(tokens.refresh_token);
-          }
-          return true;
+        let tokenResponse: Response;
+        try {
+          tokenResponse = await fetch('https://login.microsoftonline.com/common/oauth2/v2.0/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+              client_id: envConfig.msalClientId,
+              refresh_token: refreshToken,
+              grant_type: 'refresh_token',
+              scope: `openid profile email offline_access ${envConfig.entraScopes}`,
+            }).toString(),
+            signal: AbortSignal.timeout(30_000),
+          });
+        } catch {
+          return 'unreachable';
         }
-        return false;
+
+        if (!tokenResponse.ok) {
+          return classifyHttpFailure(tokenResponse.status);
+        }
+        const tokens = await tokenResponse.json() as {
+          access_token: string;
+          refresh_token?: string;
+        };
+        return this.storeRefreshed(refreshToken, tokens.access_token, tokens.refresh_token);
       }
 
       // Cloud email: refresh via Aiqbee API
       const response = await this.apiClient.postPublic<AuthResponseDto>('/api/auth/refresh', {
         refreshToken,
       });
-
-      if (response.accessToken) {
-        await this.tokenStorage.setAccessToken(response.accessToken);
-        if (response.refreshToken) {
-          await this.tokenStorage.setRefreshToken(response.refreshToken);
-        }
-        return true;
+      return this.storeRefreshed(refreshToken, response.accessToken, response.refreshToken);
+    } catch (err) {
+      if (err instanceof ApiRequestError) {
+        return classifyHttpFailure(err.status);
       }
-      return false;
-    } catch {
-      return false;
+      return 'unreachable';
     }
+  }
+
+  /**
+   * Store the tokens from a successful refresh. Token storage discards them if
+   * the user signed out or signed in again while the refresh was running; the
+   * refresh itself still succeeded, so callers retry with whatever is stored now.
+   */
+  private async storeRefreshed(refreshedWith: string, accessToken?: string, refreshToken?: string): Promise<RefreshResult> {
+    if (!accessToken) {
+      return 'rejected';
+    }
+    await this.tokenStorage.updateTokens(accessToken, refreshToken || undefined, refreshedWith);
+    return 'ok';
   }
 
   /**
@@ -404,13 +411,15 @@ export class AuthService {
    * redirects back to localhost with JWT tokens.
    */
   private async signInViaBrokeredAuth(provider: 'entra' | 'google'): Promise<void> {
-    const conn = this.connectionManager.getConnection();
+    const entry = this.getEntry();
     const state = crypto.randomBytes(16).toString('hex');
     const { port, resultPromise: tokenPromise, cancel } = await startBrokeredTokenServer(state);
     this.pendingCancel = cancel;
 
     try {
-      const loginUrl = new URL('/api/vscode/auth/login', conn.baseUrl);
+      // Append to the base URL rather than resolving an absolute path, so a
+      // Hive Server hosted under a path prefix keeps that prefix.
+      const loginUrl = new URL(`${entry.baseUrl}/api/vscode/auth/login`);
       loginUrl.searchParams.set('redirect_port', String(port));
       loginUrl.searchParams.set('provider', provider);
       loginUrl.searchParams.set('state', state);
@@ -419,21 +428,21 @@ export class AuthService {
       const result = await tokenPromise;
       this.pendingCancel = null; // Tokens received — cancel no longer possible
 
-      await this.tokenStorage.setAccessToken(result.token);
-      if (result.refreshToken) {
-        await this.tokenStorage.setRefreshToken(result.refreshToken);
-      }
-      await this.tokenStorage.setAuthType(provider === 'entra' ? 'microsoft' : 'google');
-
       let user: UserDto | undefined;
       if (result.user) {
         try {
           user = JSON.parse(result.user) as UserDto;
-          await this.tokenStorage.setUserJson(result.user);
         } catch {
           // User JSON parsing failed — not critical
         }
       }
+
+      await this.tokenStorage.setSession({
+        accessToken: result.token,
+        refreshToken: result.refreshToken || undefined,
+        authType: provider === 'entra' ? 'microsoft' : 'google',
+        user,
+      });
 
       this._onAuthStateChanged.fire({
         authenticated: true,
@@ -487,15 +496,12 @@ export class AuthService {
       throw new Error('No access token received');
     }
 
-    await this.tokenStorage.setAccessToken(response.accessToken);
-    if (response.refreshToken) {
-      await this.tokenStorage.setRefreshToken(response.refreshToken);
-    }
-    await this.tokenStorage.setAuthType(authType);
-
-    if (response.user) {
-      await this.tokenStorage.setUserJson(JSON.stringify(response.user));
-    }
+    await this.tokenStorage.setSession({
+      accessToken: response.accessToken,
+      refreshToken: response.refreshToken,
+      authType,
+      user: response.user,
+    });
 
     this._onAuthStateChanged.fire({
       authenticated: true,

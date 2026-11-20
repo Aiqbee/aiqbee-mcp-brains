@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import * as vscode from 'vscode';
+import { addMcpConnection } from './mcp-config.js';
 
 const mockMkdir = vi.fn().mockResolvedValue(undefined);
 const mockReadFile = vi.fn();
@@ -11,7 +12,7 @@ vi.mock('fs/promises', () => ({
   writeFile: (...args: any[]) => mockWriteFile(...args),
 }));
 
-const { addMcpConnection } = await import('./mcp-config.js');
+// vi.mock is hoisted above imports, so this import already sees the mocked fs/promises.
 
 const originalViteApiUrl = process.env.VITE_API_URL;
 

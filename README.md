@@ -58,16 +58,23 @@ This collapses the feedback loop from days (write spec → implement → documen
 
 ## Features
 
+### Multiple Servers
+
+- **Aiqbee Cloud and any number of Hive Servers at once** — each with its own sign-in
+- **Brains view** lists every server with its brains underneath, and shows when a server is signed out, expired or offline
+- Signing out of, or losing, one server never affects the others
+- Pre-configure Hive Servers with the `aiqbee.servers` user setting
+
 ### Brain Management
 
-- **Browse your brains** — compact sidebar list with neuron, type, and synapse counts
+- **Browse your brains** by server, with neuron, type, and synapse counts on hover
 - **Create new brains** from templates or blank
-- **Sign in** with Microsoft Entra, Google, or email/password
+- **Sign in** with Microsoft Entra, Google, or email/password — whichever each server supports
 
 ### MCP Connections
 
-- **One-click setup** — writes connection config to `.claude/settings.json` or `.mcp.json`
-- Works with Claude Code, Cursor, Windsurf, and any MCP-compatible tool
+- **One-click setup** — writes connection config to `.mcp.json` (Claude Code), `.cursor/mcp.json`, `.vscode/mcp.json` or `.roo/mcp.json`
+- Uses the MCP address of the brain's own server
 - No manual config editing required
 
 ### Brain Graph Visualisation
@@ -109,11 +116,11 @@ Press `F5` in VS Code to launch the Extension Development Host.
 ## Usage
 
 1. Click the **Aiqbee** icon in the Activity Bar (left sidebar).
-2. **Sign in** with your Aiqbee account.
-3. Your brains appear in a compact list.
-4. Click the **graph icon** to visualise a brain's knowledge structure.
-5. Click the **+** button to add an MCP connection to your project.
-6. Use the **Help** and **Prompts** tabs for guidance and ready-to-use prompts.
+2. **Sign in** to Aiqbee Cloud, or click **+** in the Brains view to add your Hive Server.
+3. Your servers appear in the **Brains** view with their brains underneath.
+4. Click a brain to visualise its knowledge graph.
+5. Click the plug icon next to a brain to add an MCP connection to your project.
+6. Use the **Account**, **Help** and **Prompts** tabs for sign-in, guidance and ready-to-use prompts.
 
 > **Tip:** After adding an MCP connection for the first time, restart VS Code or reload your AI assistant's window for it to pick up the new server.
 
@@ -121,13 +128,25 @@ Press `F5` in VS Code to launch the Extension Development Host.
 
 ## Commands
 
-| Command                       | Description                     |
-| ----------------------------- | ------------------------------- |
-| `Aiqbee: Open Brain Manager`  | Focus the sidebar panel         |
-| `Aiqbee: Sign In`             | Sign in to Aiqbee               |
-| `Aiqbee: Sign Out`            | Sign out                        |
-| `Aiqbee: Refresh Brains`      | Refresh the brain list          |
-| `Aiqbee: Add MCP Connection`  | Add an MCP connection for a brain |
+| Command                           | Description                                   |
+| --------------------------------- | --------------------------------------------- |
+| `Aiqbee: Open Brain Manager`      | Focus the Brains view                         |
+| `Aiqbee: Add Hive Server…`        | Add a Hive Server by address                  |
+| `Aiqbee: Remove Server`           | Remove a Hive Server you added                |
+| `Aiqbee: Sign In`                 | Sign in to a server                           |
+| `Aiqbee: Sign Out`                | Sign out of a server                          |
+| `Aiqbee: Refresh`                 | Reload servers and brains                     |
+| `Aiqbee: Create Brain…`           | Create a brain on a server                    |
+| `Aiqbee: Open Brain Graph`        | Open a brain's graph                          |
+| `Aiqbee: Add MCP Connection…`     | Add an MCP connection for a brain             |
+| `Aiqbee: Create a Free Account`   | Open the Aiqbee Cloud sign-up page            |
+
+## Settings
+
+| Setting              | Description |
+| -------------------- | ----------- |
+| `aiqbee.servers`     | Hive Servers to add automatically, as URLs or `{ "url": "…", "label": "…" }`. Read from user settings only. |
+| `aiqbee.environment` | API environment to connect to. |
 
 ---
 

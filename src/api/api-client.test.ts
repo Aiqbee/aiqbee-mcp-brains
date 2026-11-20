@@ -1,35 +1,15 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { ApiClient, ApiRequestError } from './api-client.js';
+import { ApiClient, ApiRequestError, NetworkError } from './api-client.js';
 import { TokenStorage } from '../auth/token-storage.js';
 import type { ConnectionManager } from '../connection/connection.js';
 
 function createMockTokenStorage(token?: string): TokenStorage {
   return {
     getAccessToken: vi.fn().mockResolvedValue(token),
-    setAccessToken: vi.fn(),
-    getRefreshToken: vi.fn(),
-    setRefreshToken: vi.fn(),
-    getAuthType: vi.fn(),
-    setAuthType: vi.fn(),
-    getUserJson: vi.fn(),
-    setUserJson: vi.fn(),
-    clear: vi.fn(),
-    hasTokens: vi.fn().mockResolvedValue(!!token),
   } as unknown as TokenStorage;
 }
 
-function createMockConnectionManager(): ConnectionManager {
-  return {
-    getConnection: vi.fn().mockReturnValue({
-      backendType: 'cloud',
-      baseUrl: 'https://api.aiqbee.com',
-      mcpBaseUrl: 'https://mcp.aiqbee.com',
-      authProviders: ['entra', 'google', 'email'],
-      label: 'Aiqbee Cloud',
-    }),
-    isHive: vi.fn().mockReturnValue(false),
-  } as unknown as ConnectionManager;
-}
+const BASE_URL = 'https://api.aiqbee.com';
 
 function mockFetch(response: Partial<Response>) {
   const fn = vi.fn().mockResolvedValue({
@@ -51,7 +31,7 @@ describe('ApiClient', () => {
 
   beforeEach(() => {
     tokenStorage = createMockTokenStorage('test-token');
-    client = new ApiClient(tokenStorage, createMockConnectionManager());
+    client = new ApiClient(BASE_URL, tokenStorage);
   });
 
   afterEach(() => {
@@ -69,7 +49,7 @@ describe('ApiClient', () => {
 
       expect(fetchMock).toHaveBeenCalledOnce();
       const [url, init] = fetchMock.mock.calls[0];
-      expect(url).toContain('/api/test');
+      expect(url).toBe('https://api.aiqbee.com/api/test');
       expect(init.method).toBe('GET');
       expect(init.headers.Authorization).toBe('Bearer test-token');
       expect(result).toEqual({ id: '1' });
@@ -77,7 +57,7 @@ describe('ApiClient', () => {
 
     it('sends GET without auth when no token', async () => {
       tokenStorage = createMockTokenStorage(undefined);
-      client = new ApiClient(tokenStorage, createMockConnectionManager());
+      client = new ApiClient(BASE_URL, tokenStorage);
 
       const fetchMock = mockFetch({
         json: async () => ({}),
@@ -175,7 +155,7 @@ describe('ApiClient', () => {
       });
       vi.stubGlobal('fetch', fetchMock);
 
-      const refreshHandler = vi.fn().mockResolvedValue(true);
+      const refreshHandler = vi.fn().mockResolvedValue('ok');
       client.setRefreshHandler(refreshHandler);
 
       const result = await client.get('/api/protected');
@@ -193,7 +173,7 @@ describe('ApiClient', () => {
         text: async () => '',
       });
 
-      client.setRefreshHandler(vi.fn().mockResolvedValue(false));
+      client.setRefreshHandler(vi.fn().mockResolvedValue('rejected'));
 
       await expect(client.get('/api/protected'))
         .rejects
@@ -221,7 +201,7 @@ describe('ApiClient', () => {
         };
       }));
 
-      const refreshHandler = vi.fn().mockResolvedValue(true);
+      const refreshHandler = vi.fn().mockResolvedValue('ok');
       client.setRefreshHandler(refreshHandler);
 
       // Fire two requests concurrently — should only refresh once
@@ -231,6 +211,43 @@ describe('ApiClient', () => {
       ]);
 
       expect(refreshHandler).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe('network failures', () => {
+    it('turns a fetch rejection into NetworkError', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('fetch failed')));
+      await expect(client.get('/api/test')).rejects.toBeInstanceOf(NetworkError);
+    });
+
+    it('turns a fetch rejection in postPublic into NetworkError', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new DOMException('timed out', 'TimeoutError')));
+      await expect(client.postPublic('/api/auth/refresh', {})).rejects.toBeInstanceOf(NetworkError);
+    });
+
+    it('throws NetworkError, not an expiry, when refresh reports unreachable', async () => {
+      mockFetch({ ok: false, status: 401, statusText: 'Unauthorized', text: async () => '' });
+      client.setRefreshHandler(vi.fn().mockResolvedValue('unreachable'));
+
+      await expect(client.get('/api/protected')).rejects.toBeInstanceOf(NetworkError);
+    });
+  });
+
+  describe('separate servers', () => {
+    it('each client uses its own base URL and refresh handler', async () => {
+      const fetchMock = mockFetch({ ok: false, status: 401, statusText: 'Unauthorized', text: async () => '' });
+      const hive = new ApiClient('https://hive.example.com', createMockTokenStorage('hive-token'));
+      const cloudRefresh = vi.fn().mockResolvedValue('rejected');
+      const hiveRefresh = vi.fn().mockResolvedValue('rejected');
+      client.setRefreshHandler(cloudRefresh);
+      hive.setRefreshHandler(hiveRefresh);
+
+      await expect(hive.get('/api/brains')).rejects.toThrow('Authentication expired');
+
+      expect(fetchMock.mock.calls[0][0]).toBe('https://hive.example.com/api/brains');
+      expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer hive-token');
+      expect(hiveRefresh).toHaveBeenCalledOnce();
+      expect(cloudRefresh).not.toHaveBeenCalled();
     });
   });
 
