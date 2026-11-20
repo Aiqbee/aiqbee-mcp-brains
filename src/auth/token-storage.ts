@@ -53,16 +53,27 @@ export class TokenStorage {
     await this.enqueue(() => this.secrets.store(this.key, JSON.stringify(session)));
   }
 
-  /** Update the tokens of an existing session, keeping the auth type and user. */
-  async updateTokens(accessToken: string, refreshToken?: string): Promise<void> {
-    await this.enqueue(async () => {
+  /**
+   * Store refreshed tokens, keeping the auth type and user — but only if the
+   * stored session is still the one that was refreshed. A refresh that
+   * finishes after a sign-out or a new sign-in must not bring back or
+   * overwrite that session. Returns false when the tokens were discarded.
+   *
+   * @param refreshedWith The refresh token the refresh was made with.
+   */
+  async updateTokens(accessToken: string, refreshToken: string | undefined, refreshedWith: string): Promise<boolean> {
+    return this.enqueue(async () => {
       const current = await this.getSession();
+      if (!current || current.refreshToken !== refreshedWith) {
+        return false;
+      }
       const next: StoredSession = {
         ...current,
         accessToken,
-        refreshToken: refreshToken ?? current?.refreshToken,
+        refreshToken: refreshToken ?? current.refreshToken,
       };
       await this.secrets.store(this.key, JSON.stringify(next));
+      return true;
     });
   }
 

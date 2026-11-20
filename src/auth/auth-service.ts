@@ -346,7 +346,7 @@ export class AuthService {
           '/api/vscode/auth/refresh',
           { refreshToken },
         );
-        return this.storeRefreshed(response.accessToken, response.refreshToken);
+        return this.storeRefreshed(refreshToken, response.accessToken, response.refreshToken);
       }
 
       // Cloud Microsoft: refresh via the MS token endpoint directly
@@ -376,14 +376,14 @@ export class AuthService {
           access_token: string;
           refresh_token?: string;
         };
-        return this.storeRefreshed(tokens.access_token, tokens.refresh_token);
+        return this.storeRefreshed(refreshToken, tokens.access_token, tokens.refresh_token);
       }
 
       // Cloud email: refresh via Aiqbee API
       const response = await this.apiClient.postPublic<AuthResponseDto>('/api/auth/refresh', {
         refreshToken,
       });
-      return this.storeRefreshed(response.accessToken, response.refreshToken);
+      return this.storeRefreshed(refreshToken, response.accessToken, response.refreshToken);
     } catch (err) {
       if (err instanceof ApiRequestError) {
         return classifyHttpFailure(err.status);
@@ -392,11 +392,16 @@ export class AuthService {
     }
   }
 
-  private async storeRefreshed(accessToken?: string, refreshToken?: string): Promise<RefreshResult> {
+  /**
+   * Store the tokens from a successful refresh. Token storage discards them if
+   * the user signed out or signed in again while the refresh was running; the
+   * refresh itself still succeeded, so callers retry with whatever is stored now.
+   */
+  private async storeRefreshed(refreshedWith: string, accessToken?: string, refreshToken?: string): Promise<RefreshResult> {
     if (!accessToken) {
       return 'rejected';
     }
-    await this.tokenStorage.updateTokens(accessToken, refreshToken || undefined);
+    await this.tokenStorage.updateTokens(accessToken, refreshToken || undefined, refreshedWith);
     return 'ok';
   }
 

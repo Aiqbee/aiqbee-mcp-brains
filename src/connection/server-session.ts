@@ -263,6 +263,11 @@ export class ServerSession {
   }
 
   private async expire(): Promise<void> {
+    // Already signed out (or already expired): a late 401 from a request that
+    // was in flight must not turn "Signed out" into "Session expired".
+    if (!this.sessionStored) {
+      return;
+    }
     this._status = 'authExpired';
     this.sessionStored = false;
     this._user = undefined;

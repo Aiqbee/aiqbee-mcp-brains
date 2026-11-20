@@ -50,7 +50,7 @@ describe('TokenStorage', () => {
     const user = { id: 'u', givenName: 'A', familyName: 'B', email: 'a@b.c' } as any;
     await cloud.setSession({ accessToken: 'old', refreshToken: 'r1', authType: 'email', user });
 
-    await cloud.updateTokens('new');
+    expect(await cloud.updateTokens('new', undefined, 'r1')).toBe(true);
 
     expect(await cloud.getSession()).toEqual({ accessToken: 'new', refreshToken: 'r1', authType: 'email', user });
   });
@@ -58,9 +58,27 @@ describe('TokenStorage', () => {
   it('serialises concurrent updates so none is lost', async () => {
     await cloud.setSession({ accessToken: 'start', refreshToken: 'r', authType: 'google' });
 
-    await Promise.all([cloud.updateTokens('first', 'r1'), cloud.updateTokens('second')]);
+    await Promise.all([cloud.updateTokens('first', 'r1', 'r'), cloud.updateTokens('second', undefined, 'r1')]);
 
     expect(await cloud.getSession()).toEqual({ accessToken: 'second', refreshToken: 'r1', authType: 'google' });
+  });
+
+  it('updateTokens does not bring back a session that was signed out during the refresh', async () => {
+    await cloud.setSession({ accessToken: 'old', refreshToken: 'r1', authType: 'email' });
+    await cloud.clear();
+
+    expect(await cloud.updateTokens('new', 'r2', 'r1')).toBe(false);
+
+    expect(await cloud.hasTokens()).toBe(false);
+  });
+
+  it('updateTokens does not overwrite a newer sign-in made during the refresh', async () => {
+    await cloud.setSession({ accessToken: 'old', refreshToken: 'r1', authType: 'email' });
+    await cloud.setSession({ accessToken: 'fresh', refreshToken: 'fresh-r', authType: 'microsoft' });
+
+    expect(await cloud.updateTokens('stale', 'r2', 'r1')).toBe(false);
+
+    expect(await cloud.getSession()).toEqual({ accessToken: 'fresh', refreshToken: 'fresh-r', authType: 'microsoft' });
   });
 
   it('reads a corrupt or empty secret as signed out', async () => {

@@ -312,6 +312,31 @@ describe('SessionManager and ServerSession', () => {
       expect(manager.require(CLOUD_SERVER_ID).status).toBe('connected');
       expect(await manager.require(CLOUD_SERVER_ID).tokenStorage.hasTokens()).toBe(true);
     });
+
+    it('stays signed out when a refresh that was running finishes afterwards', async () => {
+      await setup([HIVE], { 'hive-1': { accessToken: 'old', refreshToken: 'r', authType: 'google' } });
+      let finishRefresh!: () => void;
+      routeFetch({
+        'hive.example.com/api/brains/with-access': (_url, init) =>
+          (init?.headers as Record<string, string> | undefined)?.Authorization === 'Bearer new'
+            ? jsonResponse(brains(['A']))
+            : jsonResponse({}, 401),
+        'hive.example.com/api/vscode/auth/refresh': () => new Promise<Response>((resolve) => {
+          finishRefresh = () => resolve(jsonResponse({ accessToken: 'new', refreshToken: 'r2' }));
+        }),
+      });
+      const hive = manager.require('hive-1');
+
+      const load = hive.loadBrains().catch(() => undefined);
+      await vi.waitFor(() => expect(finishRefresh).toBeDefined());
+      await hive.signOut();
+      finishRefresh();
+      await load;
+
+      expect(await hive.tokenStorage.hasTokens()).toBe(false);
+      expect(hive.status).toBe('signedOut');
+      expect(hive.hasSession).toBe(false);
+    });
   });
 
   describe('signIn', () => {
