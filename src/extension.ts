@@ -1,95 +1,89 @@
 import * as vscode from 'vscode';
 import { ConnectionManager } from './connection/connection.js';
-import { TokenStorage } from './auth/token-storage.js';
-import { AuthService } from './auth/auth-service.js';
-import { ApiClient } from './api/api-client.js';
-import { BrainService } from './api/brain-service.js';
-import { NeuronService } from './api/neuron-service.js';
+import { migrateLegacyConnection } from './connection/migration.js';
+import { readSettingServers, SERVERS_SETTING } from './connection/settings-servers.js';
+import { SessionManager } from './connection/session-manager.js';
+import type { ServerSession } from './connection/server-session.js';
+import type { BrainWithAccessDto } from './api/types.js';
 import { SidebarProvider } from './views/sidebar-provider.js';
 import { BrainGraphPanel } from './views/brain-graph-panel.js';
+import { ServersTreeProvider, SERVERS_VIEW_ID } from './views/servers-tree.js';
+import { registerServerCommands } from './commands/server-commands.js';
+import { registerBrainCommands } from './commands/brain-commands.js';
 
-export function activate(context: vscode.ExtensionContext): void {
-  // Core services
-  const connectionManager = new ConnectionManager(context.globalState);
-  const tokenStorage = new TokenStorage(context.secrets);
-  const apiClient = new ApiClient(tokenStorage, connectionManager);
-  const authService = new AuthService(tokenStorage, apiClient, connectionManager);
-  const brainService = new BrainService(apiClient);
-  const neuronService = new NeuronService(apiClient);
+const log = vscode.window.createOutputChannel('Aiqbee');
 
-  // Wire token refresh
-  apiClient.setRefreshHandler(() => authService.refreshToken());
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
+  const webAppUrl = process.env.VITE_APP_URL || 'https://app.aiqbee.com';
+  const getEnvironment = () =>
+    vscode.workspace.getConfiguration('aiqbee').get<string>('environment', 'production');
 
-  // Register sidebar webview provider
-  const sidebarProvider = new SidebarProvider(
-    context.extensionUri,
-    connectionManager,
-    authService,
-    brainService,
-    neuronService,
-    (brainId: string, brainName: string, canWrite: boolean) => {
-      BrainGraphPanel.createOrShow(context.extensionUri, neuronService, brainId, brainName, canWrite);
-    },
-  );
-  context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(
-      SidebarProvider.viewType,
-      sidebarProvider,
-      { webviewOptions: { retainContextWhenHidden: true } },
-    ),
-  );
+  // Move a pre-multi-server install's single connection and tokens into the new layout.
+  try {
+    await migrateLegacyConnection(context.globalState, context.secrets);
+  } catch (err) {
+    // Legacy data is kept on failure and migration is retried at the next activation.
+    log.appendLine(`Migration failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
 
+  const registry = new ConnectionManager(context.globalState);
+  const sessions = new SessionManager(registry, context.secrets);
+  await sessions.initialize();
 
+  // Servers pre-seeded through the user-level aiqbee.servers setting.
+  const syncSettingServers = async () => {
+    const settings = readSettingServers(
+      vscode.workspace.getConfiguration('aiqbee'),
+      (entry, reason) => log.appendLine(`Ignoring aiqbee.servers entry ${JSON.stringify(entry)}: ${reason}`),
+    );
+    await registry.syncSettingServers(settings).catch((err) =>
+      log.appendLine(`aiqbee.servers sync failed: ${err instanceof Error ? err.message : String(err)}`));
+  };
+  void syncSettingServers();
 
-  // Commands
-  context.subscriptions.push(
-    vscode.commands.registerCommand('aiqbee.openBrainManager', () => {
-      vscode.commands.executeCommand('aiqbee.brainManagerView.focus');
-    }),
-
-    vscode.commands.registerCommand('aiqbee.signIn', () => {
-      authService.signInWithMicrosoft().catch((err) => {
-        vscode.window.showErrorMessage(`Sign in failed: ${err instanceof Error ? err.message : String(err)}`);
-      });
-    }),
-
-    vscode.commands.registerCommand('aiqbee.signOut', () => {
-      authService.signOut();
-    }),
-
-    vscode.commands.registerCommand('aiqbee.refresh', () => {
-      vscode.commands.executeCommand('aiqbee.brainManagerView.focus');
-    }),
-  );
-
-  // Proactive token refresh — run every 15 minutes to keep the session alive
-  const REFRESH_INTERVAL_MS = 15 * 60 * 1000;
-  let refreshInProgress = false;
-  const refreshTimer = setInterval(async () => {
-    if (refreshInProgress) { return; }
-    refreshInProgress = true;
-    try {
-      const state = await authService.initialize();
-      if (state.authenticated) {
-        await authService.refreshToken();
-      }
-    } catch {
-      // Refresh failed silently — the next API call will trigger 401 handling
-    } finally {
-      refreshInProgress = false;
-    }
-  }, REFRESH_INTERVAL_MS);
-
-  // Cleanup
-  context.subscriptions.push({
-    dispose: () => {
-      clearInterval(refreshTimer);
-      authService.dispose();
-      connectionManager.dispose();
-    },
+  // Views
+  const tree = new ServersTreeProvider(sessions);
+  const treeView = vscode.window.createTreeView(SERVERS_VIEW_ID, {
+    treeDataProvider: tree,
+    showCollapseAll: true,
   });
+  const sidebar = new SidebarProvider(context.extensionUri, sessions, webAppUrl, getEnvironment);
+
+  const showServerLabel = () => registry.list().length > 1;
+  const openGraph = (session: ServerSession, brain: BrainWithAccessDto) =>
+    BrainGraphPanel.createOrShow(context.extensionUri, session, brain, showServerLabel());
+
+  context.subscriptions.push(
+    log,
+    tree,
+    treeView,
+    sidebar,
+    vscode.window.registerWebviewViewProvider(SidebarProvider.viewType, sidebar, {
+      webviewOptions: { retainContextWhenHidden: true },
+    }),
+    sessions.onDidRemoveSession((entry) => BrainGraphPanel.closeForServer(entry.id)),
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration(`aiqbee.${SERVERS_SETTING}`)) {
+        void syncSettingServers();
+      }
+    }),
+    ...registerServerCommands({
+      registry,
+      sessions,
+      webAppUrl,
+      showEmailSignIn: (serverId) => sidebar.showEmailSignIn(serverId),
+    }),
+    ...registerBrainCommands({ sessions, webAppUrl, openGraph }),
+    vscode.commands.registerCommand('aiqbee.openBrainManager', () =>
+      vscode.commands.executeCommand(`${SERVERS_VIEW_ID}.focus`)),
+    { dispose: () => sessions.dispose() },
+    { dispose: () => registry.dispose() },
+  );
+
+  // Keep every signed-in session alive; each server refreshes independently.
+  sessions.startRefreshTimer();
 }
 
 export function deactivate(): void {
-  // Nothing to clean up
+  // Disposables registered on the extension context clean everything up.
 }

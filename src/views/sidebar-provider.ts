@@ -1,32 +1,30 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import type { ConnectionManager } from '../connection/connection.js';
-import { AuthService, AuthStateError, SignInCancelledError } from '../auth/auth-service.js';
-import { BrainService } from '../api/brain-service.js';
-import { NeuronService } from '../api/neuron-service.js';
-import { addMcpConnection } from '../mcp/mcp-config.js';
-import { ApiRequestError } from '../api/api-client.js';
-import type { WebviewMessage } from '../api/types.js';
+import { AuthStateError, SignInCancelledError } from '../auth/auth-service.js';
+import type { SessionManager } from '../connection/session-manager.js';
+import type { ServerSession } from '../connection/server-session.js';
+import type { ExtensionMessage, ServerViewModel, WebviewMessage } from '../api/types.js';
+import { signUpUrl } from '../commands/server-commands.js';
 
-const log = vscode.window.createOutputChannel('Aiqbee Sidebar');
-
-export class SidebarProvider implements vscode.WebviewViewProvider {
+/**
+ * The Account & Help webview: one card per server with its sign-in state and
+ * sign-in form, plus the Help and Prompts tabs. Brains live in the native tree.
+ */
+export class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   public static readonly viewType = 'aiqbee.brainManagerView';
   private view?: vscode.WebviewView;
+  private ready = false;
+  private pendingEmailServerId: string | undefined;
+  private readonly disposables: vscode.Disposable[] = [];
 
   constructor(
     private readonly extensionUri: vscode.Uri,
-    private readonly connectionManager: ConnectionManager,
-    private readonly authService: AuthService,
-    private readonly brainService: BrainService,
-    private readonly neuronService: NeuronService,
-    private readonly openGraph: (brainId: string, brainName: string, canWrite: boolean) => void,
+    private readonly sessions: SessionManager,
+    private readonly webAppUrl: string,
+    private readonly getEnvironment: () => string,
   ) {
-    // Forward auth state changes to webview
-    this.authService.onAuthStateChanged((state) => {
-      this.postMessage({ command: 'authStateChanged', payload: state });
-    });
+    this.disposables.push(sessions.onDidChange(() => this.postServers()));
   }
 
   resolveWebviewView(
@@ -35,6 +33,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     _token: vscode.CancellationToken,
   ): void {
     this.view = webviewView;
+    this.ready = false;
 
     webviewView.webview.options = {
       enableScripts: true,
@@ -48,240 +47,128 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     webviewView.webview.onDidReceiveMessage(
       (message: WebviewMessage) => this.handleMessage(message),
     );
+    webviewView.onDidDispose(() => {
+      this.view = undefined;
+      this.ready = false;
+    });
+  }
+
+  /** Reveal the view and open the email sign-in form for a server. */
+  showEmailSignIn(serverId: string): void {
+    this.pendingEmailServerId = serverId;
+    void vscode.commands.executeCommand(`${SidebarProvider.viewType}.focus`);
+    this.flushPendingEmail();
+  }
+
+  dispose(): void {
+    this.disposables.forEach((d) => d.dispose());
   }
 
   private async handleMessage(message: WebviewMessage): Promise<void> {
+    const serverId = 'payload' in message && message.payload && 'serverId' in message.payload
+      ? message.payload.serverId
+      : undefined;
     try {
       switch (message.command) {
         case 'ready':
-        case 'getAuthState': {
-          const state = await this.authService.initialize();
-          this.postMessage({ command: 'authStateChanged', payload: state });
-          const currentConn = this.connectionManager.getConnection();
-          this.postMessage({
-            command: 'connectionChanged',
-            payload: {
-              backendType: currentConn.backendType,
-              label: currentConn.label,
-              authProviders: currentConn.authProviders,
-              webAppUrl: currentConn.backendType === 'hive' ? undefined : this.getWebAppUrl(),
-            },
-          });
+          this.ready = true;
+          this.postServers();
+          this.flushPendingEmail();
           break;
-        }
 
-        case 'signInMicrosoft': {
-          this.postMessage({ command: 'loading', payload: { loading: true, command: 'signIn' } });
-          await this.authService.signInWithMicrosoft();
-          this.postMessage({ command: 'loading', payload: { loading: false, command: 'signIn' } });
-          break;
-        }
-
-        case 'signInGoogle': {
-          this.postMessage({ command: 'loading', payload: { loading: true, command: 'signIn' } });
-          await this.authService.signInWithGoogle();
-          this.postMessage({ command: 'loading', payload: { loading: false, command: 'signIn' } });
+        case 'signIn': {
+          const session = this.sessions.require(message.payload.serverId);
+          await this.runSignIn(session, () => session.signIn(message.payload.provider));
           break;
         }
 
         case 'signInEmail': {
-          this.postMessage({ command: 'loading', payload: { loading: true, command: 'signIn' } });
-          await this.authService.signInWithEmail(message.payload);
-          this.postMessage({ command: 'loading', payload: { loading: false, command: 'signIn' } });
+          const { serverId: id, email, password } = message.payload;
+          const session = this.sessions.require(id);
+          await this.runSignIn(session, () => session.signInWithEmail({ email, password }));
           break;
         }
 
-        case 'signOut': {
-          await this.authService.signOut();
+        case 'cancelSignIn':
+          this.sessions.require(message.payload.serverId).cancelSignIn();
           break;
-        }
 
-        case 'listBrains': {
-          this.postMessage({ command: 'loading', payload: { loading: true, command: 'listBrains' } });
-          log.appendLine('Fetching brains...');
-          const brains = await this.brainService.listBrains();
-          log.appendLine(`Got ${Array.isArray(brains) ? brains.length : typeof brains} brains`);
-          this.postMessage({ command: 'brainsLoaded', payload: brains });
-          this.postMessage({ command: 'loading', payload: { loading: false, command: 'listBrains' } });
+        case 'signOut':
+          await this.sessions.require(message.payload.serverId).signOut();
           break;
-        }
 
-        case 'createBrain': {
-          this.postMessage({ command: 'loading', payload: { loading: true, command: 'createBrain' } });
-          const brain = await this.brainService.createBrain(message.payload);
-          this.postMessage({ command: 'brainCreated', payload: brain });
-          this.postMessage({ command: 'loading', payload: { loading: false, command: 'createBrain' } });
+        case 'addServer':
+          await vscode.commands.executeCommand('aiqbee.addServer', message.payload.url);
           break;
-        }
 
-        case 'getBrainCounts': {
-          const counts = await this.neuronService.getBrainCounts(message.payload.brainId);
-          this.postMessage({
-            command: 'brainCounts',
-            payload: { brainId: message.payload.brainId, counts },
-          });
+        case 'removeServer':
+          await vscode.commands.executeCommand('aiqbee.removeServer', message.payload.serverId);
           break;
-        }
 
-        case 'getBrainTemplates': {
-          const templates = await this.brainService.getBrainTemplates();
-          this.postMessage({ command: 'brainTemplatesLoaded', payload: templates });
+        case 'openExternal':
+          await openExternalSafely(message.payload.url);
           break;
-        }
-
-        case 'connectToHive': {
-          this.postMessage({ command: 'loading', payload: { loading: true, command: 'connectToHive' } });
-          const conn = await this.connectionManager.connectToHive(message.payload.url);
-          await this.authService.signOut();
-          this.postMessage({
-            command: 'connectionChanged',
-            payload: {
-              backendType: conn.backendType,
-              label: conn.label,
-              authProviders: conn.authProviders,
-              webAppUrl: undefined,
-            },
-          });
-          this.postMessage({ command: 'loading', payload: { loading: false, command: 'connectToHive' } });
-          break;
-        }
-
-        case 'disconnectHive': {
-          await this.connectionManager.connectToCloud();
-          await this.authService.signOut();
-          const cloudConn = this.connectionManager.getConnection();
-          this.postMessage({
-            command: 'connectionChanged',
-            payload: {
-              backendType: cloudConn.backendType,
-              label: cloudConn.label,
-              authProviders: cloudConn.authProviders,
-              webAppUrl: this.getWebAppUrl(),
-            },
-          });
-          break;
-        }
-
-        case 'addMcpConnection': {
-          const mcpBaseUrl = this.connectionManager.getConnection().mcpBaseUrl;
-          await addMcpConnection(message.payload.brainId, message.payload.brainName, mcpBaseUrl);
-          break;
-        }
-
-        case 'openBrainGraph': {
-          this.openGraph(message.payload.brainId, message.payload.brainName, message.payload.canWrite);
-          break;
-        }
-
-        case 'cancelSignIn': {
-          this.authService.cancelSignIn();
-          this.postMessage({ command: 'loading', payload: { loading: false, command: 'signIn' } });
-          break;
-        }
-
-        case 'openExternal': {
-          vscode.env.openExternal(vscode.Uri.parse(message.payload.url));
-          break;
-        }
       }
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-
-      // User-initiated cancellation — loading already cleared by cancelSignIn handler
-      if (err instanceof SignInCancelledError) {
-        return;
-      }
-
-      // If the API returned 401 after refresh failed, sign out so the
-      // webview redirects to the login page instead of showing an error.
-      if (err instanceof ApiRequestError && err.status === 401) {
-        log.appendLine('Session expired — signing out');
-        await this.authService.signOut();
-        return;
-      }
-
-      // Auth state errors (SignUpRequired, PendingApproval) — send actionable message
-      if (err instanceof AuthStateError) {
-        // Only show the "Sign up at web app" link for cloud — hive users
-        // manage accounts through their own admin, not the Aiqbee web app.
-        const webAppUrl = this.connectionManager.isHive() ? '' : this.getWebAppUrl();
-        this.postMessage({
-          command: 'authActionRequired',
-          payload: { state: err.state, message: errorMessage, webAppUrl },
-        });
-        this.postMessage({ command: 'loading', payload: { loading: false, command: message.command } });
-        return;
-      }
-
-      // Subscription/license limit errors — parse structured error from backend
-      if (err instanceof ApiRequestError && err.status === 400) {
-        const limitError = this.parseSubscriptionLimitError(err);
-        if (limitError) {
-          this.postMessage({
-            command: 'subscriptionLimitReached',
-            payload: limitError,
-          });
-          this.postMessage({ command: 'loading', payload: { loading: false, command: message.command } });
-          return;
-        }
-      }
-
       this.postMessage({
         command: 'error',
-        payload: { message: errorMessage, command: message.command },
-      });
-      this.postMessage({
-        command: 'loading',
-        payload: { loading: false, command: message.command },
+        payload: { message: err instanceof Error ? err.message : String(err), serverId },
       });
     }
   }
 
-  /** Web app URL from build-time env config (VITE_APP_URL) */
-  private getWebAppUrl(): string {
-    return process.env.VITE_APP_URL || 'https://app.aiqbee.com';
-  }
-
-  /** Parse a structured subscription limit error from the API response body */
-  private parseSubscriptionLimitError(err: ApiRequestError): {
-    errorCode: string;
-    message: string;
-    currentCount: number;
-    maxAllowed: number;
-    isHive: boolean;
-  } | null {
-    if (!err.body) { return null; }
+  private async runSignIn(session: ServerSession, flow: () => Promise<void>): Promise<void> {
     try {
-      const body = typeof err.body === 'string' ? JSON.parse(err.body) : err.body;
-      if (body.errorCode && typeof body.currentCount === 'number' && typeof body.maxAllowed === 'number') {
-        return {
-          errorCode: body.errorCode,
-          message: body.message || err.message,
-          currentCount: body.currentCount,
-          maxAllowed: body.maxAllowed,
-          isHive: this.connectionManager.isHive(),
-        };
+      await flow();
+    } catch (err) {
+      if (err instanceof SignInCancelledError) {
+        return;
       }
-    } catch { /* not a structured error */ }
-    return null;
+      if (err instanceof AuthStateError) {
+        this.postMessage({
+          command: 'authActionRequired',
+          payload: {
+            serverId: session.serverId,
+            state: err.state,
+            message: err.message,
+            // Only cloud accounts sign up through the Aiqbee web app; Hive
+            // accounts are managed by the organisation's own administrator.
+            signUpUrl: session.entry.kind === 'cloud' ? signUpUrl(this.webAppUrl) : undefined,
+          },
+        });
+        return;
+      }
+      throw err;
+    }
   }
 
-  private postMessage(message: unknown): void {
-    this.view?.webview.postMessage(message);
+  private postServers(): void {
+    if (!this.ready) {
+      return;
+    }
+    const servers: ServerViewModel[] = this.sessions.all().map((s) => toViewModel(s, this.webAppUrl));
+    this.postMessage({ command: 'serversChanged', payload: { servers, environment: this.getEnvironment() } });
+  }
+
+  private flushPendingEmail(): void {
+    if (this.ready && this.pendingEmailServerId) {
+      this.postMessage({ command: 'showEmailSignIn', payload: { serverId: this.pendingEmailServerId } });
+      this.pendingEmailServerId = undefined;
+    }
+  }
+
+  private postMessage(message: ExtensionMessage): void {
+    void this.view?.webview.postMessage(message);
   }
 
   private getHtml(webview: vscode.Webview): string {
     const distPath = path.join(this.extensionUri.fsPath, 'dist', 'webview');
 
-    const jsFile = this.findFile(distPath, 'assets', '.js');
-    const cssFile = this.findFile(distPath, 'assets', '.css');
+    const jsFile = findFile(distPath, 'assets', '.js');
+    const cssFile = findFile(distPath, 'assets', '.css');
 
-    const jsUri = jsFile
-      ? webview.asWebviewUri(vscode.Uri.file(jsFile))
-      : '';
-    const cssUri = cssFile
-      ? webview.asWebviewUri(vscode.Uri.file(cssFile))
-      : '';
+    const jsUri = jsFile ? webview.asWebviewUri(vscode.Uri.file(jsFile)) : '';
+    const cssUri = cssFile ? webview.asWebviewUri(vscode.Uri.file(cssFile)) : '';
 
     const nonce = getNonce();
 
@@ -292,7 +179,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; font-src ${webview.cspSource};">
   ${cssUri ? `<link rel="stylesheet" href="${cssUri}">` : ''}
-  <title>Aiqbee Brain Manager</title>
+  <title>Aiqbee</title>
 </head>
 <body>
   <div id="root"></div>
@@ -300,16 +187,44 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 </body>
 </html>`;
   }
+}
 
-  private findFile(basePath: string, subDir: string, extension: string): string | undefined {
-    const dirPath = path.join(basePath, subDir);
-    try {
-      const files = fs.readdirSync(dirPath);
-      const match = files.find((f) => f.endsWith(extension));
-      return match ? path.join(dirPath, match) : undefined;
-    } catch {
-      return undefined;
-    }
+export function toViewModel(session: ServerSession, webAppUrl: string): ServerViewModel {
+  const entry = session.entry;
+  return {
+    id: entry.id,
+    kind: entry.kind,
+    label: entry.label,
+    baseUrl: entry.baseUrl,
+    status: session.status,
+    statusMessage: session.statusMessage,
+    signedIn: session.hasSession,
+    user: session.user
+      ? { givenName: session.user.givenName, familyName: session.user.familyName, email: session.user.email }
+      : undefined,
+    authProviders: entry.authProviders,
+    removable: entry.origin === 'user',
+    managed: entry.origin === 'setting',
+    signUpUrl: entry.kind === 'cloud' ? signUpUrl(webAppUrl) : undefined,
+  };
+}
+
+/** Only open web links from the webview; never file:, command: or other schemes. */
+async function openExternalSafely(url: string): Promise<void> {
+  const uri = vscode.Uri.parse(url);
+  if (uri.scheme !== 'https' && uri.scheme !== 'http') {
+    throw new Error('Only web links can be opened.');
+  }
+  await vscode.env.openExternal(uri);
+}
+
+function findFile(basePath: string, subDir: string, extension: string): string | undefined {
+  const dirPath = path.join(basePath, subDir);
+  try {
+    const match = fs.readdirSync(dirPath).find((f) => f.endsWith(extension));
+    return match ? path.join(dirPath, match) : undefined;
+  } catch {
+    return undefined;
   }
 }
 

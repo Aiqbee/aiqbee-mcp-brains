@@ -1,78 +1,91 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { TokenStorage } from './token-storage.js';
-
-/** In-memory SecretStorage stub */
-function createMockSecretStorage() {
-  const store = new Map<string, string>();
-  return {
-    get: async (key: string) => store.get(key),
-    store: async (key: string, value: string) => { store.set(key, value); },
-    delete: async (key: string) => { store.delete(key); },
-    onDidChange: () => ({ dispose: () => {} }),
-    _store: store,
-  };
-}
+import { TokenStorage, sessionSecretKey } from './token-storage.js';
+import { createSecrets } from '../__mocks__/test-helpers.js';
 
 describe('TokenStorage', () => {
-  let secrets: ReturnType<typeof createMockSecretStorage>;
-  let storage: TokenStorage;
+  let secrets: ReturnType<typeof createSecrets>;
+  let cloud: TokenStorage;
+  let hive: TokenStorage;
 
   beforeEach(() => {
-    secrets = createMockSecretStorage();
-    storage = new TokenStorage(secrets as any);
+    secrets = createSecrets();
+    cloud = new TokenStorage(secrets, 'cloud');
+    hive = new TokenStorage(secrets, 'hive-1');
   });
 
-  it('returns undefined when no token stored', async () => {
-    expect(await storage.getAccessToken()).toBeUndefined();
+  it('stores the whole session in one secret keyed by server id', async () => {
+    await cloud.setSession({ accessToken: 'a', refreshToken: 'r', authType: 'microsoft' });
+
+    expect(secrets.store).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(secrets._data.get(sessionSecretKey('cloud'))!)).toEqual({
+      accessToken: 'a',
+      refreshToken: 'r',
+      authType: 'microsoft',
+    });
+    expect(await cloud.getAccessToken()).toBe('a');
+    expect(await cloud.getRefreshToken()).toBe('r');
+    expect(await cloud.getAuthType()).toBe('microsoft');
+    expect(await cloud.hasTokens()).toBe(true);
   });
 
-  it('stores and retrieves access token', async () => {
-    await storage.setAccessToken('tok-123');
-    expect(await storage.getAccessToken()).toBe('tok-123');
+  it('keeps sessions for different servers separate', async () => {
+    await cloud.setSession({ accessToken: 'cloud-token' });
+    await hive.setSession({ accessToken: 'hive-token' });
+
+    expect(await cloud.getAccessToken()).toBe('cloud-token');
+    expect(await hive.getAccessToken()).toBe('hive-token');
   });
 
-  it('stores and retrieves refresh token', async () => {
-    await storage.setRefreshToken('ref-456');
-    expect(await storage.getRefreshToken()).toBe('ref-456');
+  it('clear() removes only its own server', async () => {
+    await cloud.setSession({ accessToken: 'cloud-token' });
+    await hive.setSession({ accessToken: 'hive-token' });
+
+    await hive.clear();
+
+    expect(await hive.hasTokens()).toBe(false);
+    expect(await cloud.getAccessToken()).toBe('cloud-token');
   });
 
-  it('stores and retrieves auth type', async () => {
-    await storage.setAuthType('microsoft');
-    expect(await storage.getAuthType()).toBe('microsoft');
+  it('updateTokens keeps the auth type and user, and the old refresh token if none is given', async () => {
+    const user = { id: 'u', givenName: 'A', familyName: 'B', email: 'a@b.c' } as any;
+    await cloud.setSession({ accessToken: 'old', refreshToken: 'r1', authType: 'email', user });
+
+    expect(await cloud.updateTokens('new', undefined, 'r1')).toBe(true);
+
+    expect(await cloud.getSession()).toEqual({ accessToken: 'new', refreshToken: 'r1', authType: 'email', user });
   });
 
-  it('stores and retrieves user JSON', async () => {
-    const json = JSON.stringify({ id: '1', email: 'test@example.com' });
-    await storage.setUserJson(json);
-    expect(await storage.getUserJson()).toBe(json);
+  it('serialises concurrent updates so none is lost', async () => {
+    await cloud.setSession({ accessToken: 'start', refreshToken: 'r', authType: 'google' });
+
+    await Promise.all([cloud.updateTokens('first', 'r1', 'r'), cloud.updateTokens('second', undefined, 'r1')]);
+
+    expect(await cloud.getSession()).toEqual({ accessToken: 'second', refreshToken: 'r1', authType: 'google' });
   });
 
-  it('hasTokens returns false when empty', async () => {
-    expect(await storage.hasTokens()).toBe(false);
+  it('updateTokens does not bring back a session that was signed out during the refresh', async () => {
+    await cloud.setSession({ accessToken: 'old', refreshToken: 'r1', authType: 'email' });
+    await cloud.clear();
+
+    expect(await cloud.updateTokens('new', 'r2', 'r1')).toBe(false);
+
+    expect(await cloud.hasTokens()).toBe(false);
   });
 
-  it('hasTokens returns true after setting token', async () => {
-    await storage.setAccessToken('tok-abc');
-    expect(await storage.hasTokens()).toBe(true);
+  it('updateTokens does not overwrite a newer sign-in made during the refresh', async () => {
+    await cloud.setSession({ accessToken: 'old', refreshToken: 'r1', authType: 'email' });
+    await cloud.setSession({ accessToken: 'fresh', refreshToken: 'fresh-r', authType: 'microsoft' });
+
+    expect(await cloud.updateTokens('stale', 'r2', 'r1')).toBe(false);
+
+    expect(await cloud.getSession()).toEqual({ accessToken: 'fresh', refreshToken: 'fresh-r', authType: 'microsoft' });
   });
 
-  it('hasTokens returns false for empty string token', async () => {
-    await storage.setAccessToken('');
-    expect(await storage.hasTokens()).toBe(false);
-  });
+  it('reads a corrupt or empty secret as signed out', async () => {
+    secrets._data.set(sessionSecretKey('cloud'), '{not json');
+    expect(await cloud.getSession()).toBeUndefined();
 
-  it('clear removes all stored values', async () => {
-    await storage.setAccessToken('tok');
-    await storage.setRefreshToken('ref');
-    await storage.setAuthType('email');
-    await storage.setUserJson('{}');
-
-    await storage.clear();
-
-    expect(await storage.getAccessToken()).toBeUndefined();
-    expect(await storage.getRefreshToken()).toBeUndefined();
-    expect(await storage.getAuthType()).toBeUndefined();
-    expect(await storage.getUserJson()).toBeUndefined();
-    expect(await storage.hasTokens()).toBe(false);
+    secrets._data.set(sessionSecretKey('cloud'), JSON.stringify({ accessToken: '' }));
+    expect(await cloud.hasTokens()).toBe(false);
   });
 });

@@ -1,37 +1,46 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { ConnectionManager } from './connection.js';
-
-function createMockGlobalState() {
-  const store = new Map<string, unknown>();
-  return {
-    get: <T>(key: string) => store.get(key) as T | undefined,
-    update: vi.fn(async (key: string, value: unknown) => {
-      if (value === undefined) {
-        store.delete(key);
-      } else {
-        store.set(key, value);
-      }
-    }),
-    keys: () => [...store.keys()],
-    _store: store,
-  };
-}
+import {
+  ConnectionManager,
+  CLOUD_SERVER_ID,
+  DuplicateServerError,
+  SERVERS_STORAGE_KEY,
+  normaliseUrl,
+  type ServerEntry,
+} from './connection.js';
+import { NetworkError } from '../api/api-client.js';
+import { createMemento, hiveDiscovery, jsonResponse } from '../__mocks__/test-helpers.js';
 
 const originalViteApiUrl = process.env.VITE_API_URL;
 
+function hiveEntry(overrides: Partial<ServerEntry> = {}): ServerEntry {
+  return {
+    id: 'hive-1',
+    kind: 'hive',
+    label: 'Team Hive',
+    baseUrl: 'https://hive.example.com',
+    mcpBaseUrl: 'https://hive.example.com',
+    authProviders: ['entra'],
+    origin: 'user',
+    addedAt: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
 describe('ConnectionManager', () => {
-  let globalState: ReturnType<typeof createMockGlobalState>;
+  let memento: ReturnType<typeof createMemento>;
   let manager: ConnectionManager;
+  let fetchMock: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    globalState = createMockGlobalState();
-    manager = new ConnectionManager(globalState as any);
     process.env.VITE_API_URL = 'https://api.aiqbee.com';
+    memento = createMemento();
+    manager = new ConnectionManager(memento as any);
+    fetchMock = vi.fn().mockResolvedValue(jsonResponse(hiveDiscovery()));
+    vi.stubGlobal('fetch', fetchMock);
   });
 
   afterEach(() => {
     manager.dispose();
-    vi.restoreAllMocks();
     vi.unstubAllGlobals();
     if (originalViteApiUrl === undefined) {
       delete process.env.VITE_API_URL;
@@ -40,257 +49,257 @@ describe('ConnectionManager', () => {
     }
   });
 
-  describe('getConnection', () => {
-    it('returns cloud connection by default', () => {
-      const conn = manager.getConnection();
-
-      expect(conn.backendType).toBe('cloud');
-      expect(conn.baseUrl).toBe('https://api.aiqbee.com');
-      expect(conn.mcpBaseUrl).toBe('https://mcp.aiqbee.com');
-      expect(conn.authProviders).toEqual(['entra', 'google', 'email']);
-      expect(conn.label).toBe('Aiqbee Cloud');
+  describe('list', () => {
+    it('always contains the built-in cloud entry first', () => {
+      const [cloud] = manager.list();
+      expect(cloud).toMatchObject({
+        id: CLOUD_SERVER_ID,
+        kind: 'cloud',
+        label: 'Aiqbee Cloud',
+        baseUrl: 'https://api.aiqbee.com',
+        mcpBaseUrl: 'https://mcp.aiqbee.com',
+        origin: 'builtin',
+      });
     });
 
-    it('returns stored hive connection from globalState', () => {
-      const hiveConn = {
-        backendType: 'hive' as const,
-        baseUrl: 'https://hive.company.com',
-        mcpBaseUrl: 'https://hive.company.com',
-        authProviders: ['entra'],
-        label: 'hive.company.com',
-      };
-      globalState._store.set('aiqbee-connection', hiveConn);
+    it('loads stored Hive entries and rebuilds the cloud URLs from the current build', () => {
+      memento._store.set(SERVERS_STORAGE_KEY, [
+        { ...manager.get(CLOUD_SERVER_ID)!, label: 'My Cloud', baseUrl: 'https://stale.example.com' },
+        hiveEntry(),
+      ]);
+      const reloaded = new ConnectionManager(memento as any);
 
-      const conn = manager.getConnection();
-
-      expect(conn.backendType).toBe('hive');
-      expect(conn.baseUrl).toBe('https://hive.company.com');
-    });
-
-    it('caches the connection after connectToCloud', async () => {
-      // After explicitly connecting, the result is cached
-      await manager.connectToCloud();
-      const a = manager.getConnection();
-      const b = manager.getConnection();
-      expect(a).toBe(b);
+      expect(reloaded.list().map((s) => s.id)).toEqual([CLOUD_SERVER_ID, 'hive-1']);
+      expect(reloaded.get(CLOUD_SERVER_ID)).toMatchObject({ label: 'My Cloud', baseUrl: 'https://api.aiqbee.com' });
+      reloaded.dispose();
     });
   });
 
-  describe('connectToHive', () => {
-    it('fetches discovery and persists hive connection', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          backendType: 'hive',
-          version: '1.0.0',
-          authProviders: ['entra', 'google'],
-          mcpBaseUrl: 'https://hive.example.com/',
-        }),
-      }));
+  describe('addHive', () => {
+    it('runs discovery and stores the new entry', async () => {
+      const entry = await manager.addHive('hive.example.com');
 
-      const conn = await manager.connectToHive('hive.example.com');
-
-      expect(conn.backendType).toBe('hive');
-      expect(conn.baseUrl).toBe('https://hive.example.com');
-      expect(conn.mcpBaseUrl).toBe('https://hive.example.com');
-      expect(conn.authProviders).toEqual(['entra', 'google']);
-      expect(conn.label).toBe('hive.example.com');
-      expect(globalState.update).toHaveBeenCalledWith('aiqbee-connection', conn);
+      expect(fetchMock).toHaveBeenCalledWith('https://hive.example.com/api/vscode/discovery', expect.anything());
+      expect(entry).toMatchObject({
+        kind: 'hive',
+        label: 'hive.example.com',
+        baseUrl: 'https://hive.example.com',
+        mcpBaseUrl: 'https://hive.example.com',
+        authProviders: ['entra', 'google'],
+        version: '1.4.0',
+        origin: 'user',
+      });
+      expect(memento._store.get(SERVERS_STORAGE_KEY)).toContainEqual(entry);
+      expect(manager.list()).toHaveLength(2);
     });
 
-    it('adds https:// when no protocol given', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          backendType: 'hive',
-          version: '1.0.0',
-          authProviders: ['entra'],
-          mcpBaseUrl: 'https://hive.test.com',
-        }),
-      }));
-
-      const conn = await manager.connectToHive('hive.test.com');
-      expect(conn.baseUrl).toBe('https://hive.test.com');
+    it('uses a custom label when given', async () => {
+      const entry = await manager.addHive('hive.example.com', { label: '  Engineering  ' });
+      expect(entry.label).toBe('Engineering');
     });
 
-    it('throws on non-OK discovery response', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-        ok: false,
-        status: 404,
-      }));
-
-      await expect(manager.connectToHive('bad.server.com'))
-        .rejects.toThrow(/returned 404/);
+    it('rejects a URL that is already configured, ignoring case and trailing slash', async () => {
+      await manager.addHive('https://hive.example.com');
+      await expect(manager.addHive('HTTPS://HIVE.EXAMPLE.COM/')).rejects.toBeInstanceOf(DuplicateServerError);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
-    it('throws when server is not a hive backend', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          backendType: 'cloud',
-          version: '1.0.0',
-          authProviders: ['entra'],
-          mcpBaseUrl: 'https://cloud.example.com',
-        }),
-      }));
-
-      await expect(manager.connectToHive('cloud.example.com'))
-        .rejects.toThrow(/did not identify as a Hive Server/);
+    it('rejects a second concurrent add of the same URL', async () => {
+      const results = await Promise.allSettled([
+        manager.addHive('hive.example.com'),
+        manager.addHive('https://hive.example.com/'),
+      ]);
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      expect(results.find((r) => r.status === 'rejected')).toMatchObject({ reason: expect.any(DuplicateServerError) });
+      expect(manager.list()).toHaveLength(2);
     });
 
-    it('throws when no auth providers configured', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          backendType: 'hive',
-          version: '1.0.0',
-          authProviders: [],
-          mcpBaseUrl: 'https://hive.example.com',
-        }),
-      }));
-
-      await expect(manager.connectToHive('hive.example.com'))
-        .rejects.toThrow(/no supported authentication providers/);
+    it('keeps only supported auth providers', async () => {
+      fetchMock.mockResolvedValue(jsonResponse(hiveDiscovery({ authProviders: ['entra', 'saml', 'local'] })));
+      const entry = await manager.addHive('hive.example.com');
+      expect(entry.authProviders).toEqual(['entra']);
     });
 
-    it('throws on invalid URL', async () => {
-      await expect(manager.connectToHive('not a valid url!!!'))
-        .rejects.toThrow(/Invalid URL/);
+    it('adds a server with no supported provider instead of failing', async () => {
+      fetchMock.mockResolvedValue(jsonResponse(hiveDiscovery({ authProviders: ['local'] })));
+      const entry = await manager.addHive('hive.example.com');
+      expect(entry.authProviders).toEqual([]);
+      expect(manager.get(entry.id)).toBeDefined();
     });
 
-    it('rejects non-HTTPS URLs for remote hosts', async () => {
-      await expect(manager.connectToHive('http://hive.company.com'))
-        .rejects.toThrow(/must use HTTPS/);
+    it('throws NetworkError when the server cannot be reached', async () => {
+      fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+      await expect(manager.addHive('hive.example.com')).rejects.toBeInstanceOf(NetworkError);
+      expect(manager.list()).toHaveLength(1);
     });
 
-    it('allows HTTP for localhost', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          backendType: 'hive',
-          version: '1.0.0',
-          authProviders: ['entra'],
-          mcpBaseUrl: 'http://localhost:8080',
-        }),
-      }));
-
-      const conn = await manager.connectToHive('http://localhost:8080');
-      expect(conn.baseUrl).toBe('http://localhost:8080');
+    it('throws when discovery returns an error status', async () => {
+      fetchMock.mockResolvedValue(jsonResponse({}, 404));
+      await expect(manager.addHive('hive.example.com')).rejects.toThrow('returned 404');
     });
 
-    it('filters auth providers to supported set', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          backendType: 'hive',
-          version: '1.0.0',
-          authProviders: ['entra', 'github', 'saml'],
-          mcpBaseUrl: 'https://hive.example.com',
-        }),
-      }));
-
-      const conn = await manager.connectToHive('hive.example.com');
-      expect(conn.authProviders).toEqual(['entra']);
+    it('throws when the server is not a Hive Server', async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ backendType: 'cloud' }));
+      await expect(manager.addHive('hive.example.com')).rejects.toThrow('did not identify as a Hive Server');
     });
 
-    it('throws when no supported auth providers after filtering', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          backendType: 'hive',
-          version: '1.0.0',
-          authProviders: ['github', 'saml'],
-          mcpBaseUrl: 'https://hive.example.com',
-        }),
-      }));
-
-      await expect(manager.connectToHive('hive.example.com'))
-        .rejects.toThrow(/no supported authentication providers/);
-    });
-
-    it('fires onConnectionChanged event', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          backendType: 'hive',
-          version: '1.0.0',
-          authProviders: ['entra'],
-          mcpBaseUrl: 'https://hive.example.com',
-        }),
-      }));
-
+    it('fires onDidChangeServers', async () => {
       const listener = vi.fn();
-      manager.onConnectionChanged(listener);
-
-      await manager.connectToHive('hive.example.com');
-
-      expect(listener).toHaveBeenCalledOnce();
-      expect(listener.mock.calls[0][0].backendType).toBe('hive');
+      manager.onDidChangeServers(listener);
+      await manager.addHive('hive.example.com');
+      expect(listener).toHaveBeenCalledTimes(1);
     });
   });
 
-  describe('connectToCloud', () => {
-    it('clears stored connection and returns cloud default', async () => {
-      globalState._store.set('aiqbee-connection', { backendType: 'hive' });
-
-      const conn = await manager.connectToCloud();
-
-      expect(conn.backendType).toBe('cloud');
-      expect(globalState.update).toHaveBeenCalledWith('aiqbee-connection', undefined);
+  describe('rename', () => {
+    it('updates the label and persists it', async () => {
+      const entry = await manager.addHive('hive.example.com');
+      await manager.rename(entry.id, '  Prod Hive ');
+      expect(manager.get(entry.id)?.label).toBe('Prod Hive');
+      expect((memento._store.get(SERVERS_STORAGE_KEY) as ServerEntry[]).find((s) => s.id === entry.id)?.label)
+        .toBe('Prod Hive');
     });
 
-    it('fires onConnectionChanged event', async () => {
-      const listener = vi.fn();
-      manager.onConnectionChanged(listener);
-
-      await manager.connectToCloud();
-
-      expect(listener).toHaveBeenCalledOnce();
-      expect(listener.mock.calls[0][0].backendType).toBe('cloud');
+    it('rejects an empty name', async () => {
+      await expect(manager.rename(CLOUD_SERVER_ID, '   ')).rejects.toThrow('cannot be empty');
     });
   });
 
-  describe('disconnect', () => {
-    it('clears stored connection and cache', async () => {
-      globalState._store.set('aiqbee-connection', { backendType: 'hive' });
+  describe('remove', () => {
+    it('removes a user-added Hive Server and fires onDidRemoveServer', async () => {
+      const entry = await manager.addHive('hive.example.com');
+      const removed = vi.fn();
+      manager.onDidRemoveServer(removed);
 
-      await manager.disconnect();
+      await manager.remove(entry.id);
 
-      expect(globalState.update).toHaveBeenCalledWith('aiqbee-connection', undefined);
-      // After disconnect, getConnection returns cloud default
-      expect(manager.getConnection().backendType).toBe('cloud');
+      expect(manager.get(entry.id)).toBeUndefined();
+      expect(removed).toHaveBeenCalledWith(expect.objectContaining({ id: entry.id }));
+    });
+
+    it('refuses to remove the cloud entry', async () => {
+      await expect(manager.remove(CLOUD_SERVER_ID)).rejects.toThrow('cannot be removed');
+    });
+
+    it('refuses to remove a settings-managed entry', async () => {
+      await manager.syncSettingServers([{ url: 'https://hive.example.com' }]);
+      const entry = manager.findByUrl('https://hive.example.com')!;
+      await expect(manager.remove(entry.id)).rejects.toThrow('aiqbee.servers setting');
     });
   });
 
-  describe('isHive', () => {
-    it('returns false for cloud connection', () => {
-      expect(manager.isHive()).toBe(false);
+  describe('refreshDiscovery', () => {
+    it('updates the providers and clears needsDiscovery', async () => {
+      memento._store.set(SERVERS_STORAGE_KEY, [hiveEntry({ authProviders: [], needsDiscovery: true })]);
+      const reloaded = new ConnectionManager(memento as any);
+
+      const entry = await reloaded.refreshDiscovery('hive-1');
+
+      expect(entry.authProviders).toEqual(['entra', 'google']);
+      expect(entry.needsDiscovery).toBeUndefined();
+      reloaded.dispose();
     });
 
-    it('returns true for hive connection', () => {
-      globalState._store.set('aiqbee-connection', {
-        backendType: 'hive',
-        baseUrl: 'https://hive.test.com',
-        mcpBaseUrl: 'https://hive.test.com',
-        authProviders: ['entra'],
-        label: 'hive.test.com',
+    it('leaves the cloud entry alone', async () => {
+      await manager.refreshDiscovery(CLOUD_SERVER_ID);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('syncSettingServers', () => {
+    it('adds new settings entries as managed servers', async () => {
+      await manager.syncSettingServers([{ url: 'https://hive.example.com', label: 'Corp' }]);
+      expect(manager.findByUrl('https://hive.example.com')).toMatchObject({ origin: 'setting', label: 'Corp' });
+    });
+
+    it('adds an unreachable settings entry marked as needing discovery', async () => {
+      fetchMock.mockRejectedValue(new TypeError('offline'));
+      await manager.syncSettingServers([{ url: 'https://hive.example.com' }]);
+      expect(manager.findByUrl('https://hive.example.com')).toMatchObject({
+        origin: 'setting',
+        needsDiscovery: true,
+        authProviders: [],
+      });
+    });
+
+    it('drops settings entries that are no longer listed and fires onDidRemoveServer', async () => {
+      await manager.syncSettingServers([{ url: 'https://hive.example.com' }]);
+      const removed = vi.fn();
+      manager.onDidRemoveServer(removed);
+
+      await manager.syncSettingServers([]);
+
+      expect(manager.findByUrl('https://hive.example.com')).toBeUndefined();
+      expect(removed).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not take over a server the user already added', async () => {
+      const entry = await manager.addHive('hive.example.com');
+      await manager.syncSettingServers([{ url: 'https://hive.example.com' }]);
+      expect(manager.get(entry.id)?.origin).toBe('user');
+      expect(manager.list()).toHaveLength(2);
+    });
+
+    it('does not lose a server the user added while discovery for a settings entry was running', async () => {
+      let release!: () => void;
+      fetchMock.mockImplementation(async (url: string) => {
+        if (url.startsWith('https://slow.example.com')) {
+          await new Promise<void>((r) => { release = r; });
+        }
+        return jsonResponse(hiveDiscovery());
       });
 
-      // New manager to avoid cache from previous getConnection calls
-      const mgr2 = new ConnectionManager(globalState as any);
-      expect(mgr2.isHive()).toBe(true);
-      mgr2.dispose();
+      const sync = manager.syncSettingServers([{ url: 'https://slow.example.com' }]);
+      await vi.waitFor(() => expect(release).toBeDefined());
+      await manager.addHive('hive.example.com');
+      release();
+      await sync;
+
+      expect(manager.findByUrl('https://hive.example.com')).toBeDefined();
+      expect(manager.findByUrl('https://slow.example.com')).toBeDefined();
+    });
+
+    it('runs overlapping syncs one after another without duplicating entries', async () => {
+      await Promise.all([
+        manager.syncSettingServers([{ url: 'https://hive.example.com' }]),
+        manager.syncSettingServers([{ url: 'https://hive.example.com' }]),
+      ]);
+      expect(manager.list().filter((s) => s.baseUrl === 'https://hive.example.com')).toHaveLength(1);
+    });
+
+    it('does nothing when the settings are unchanged', async () => {
+      await manager.syncSettingServers([{ url: 'https://hive.example.com' }]);
+      memento.update.mockClear();
+      await manager.syncSettingServers([{ url: 'https://hive.example.com' }]);
+      expect(memento.update).not.toHaveBeenCalled();
     });
   });
+});
 
-  describe('cloud URL derivation', () => {
-    it('derives mcp URL from api URL via subdomain swap', () => {
-      process.env.VITE_API_URL = 'https://api.aiqbee.dev';
-      const mgr = new ConnectionManager(globalState as any);
+describe('normaliseUrl', () => {
+  it('adds https and strips trailing slashes', () => {
+    expect(normaliseUrl(' hive.example.com/// ')).toBe('https://hive.example.com');
+  });
 
-      const conn = mgr.getConnection();
-      expect(conn.mcpBaseUrl).toBe('https://mcp.aiqbee.dev');
-      mgr.dispose();
-    });
+  it('keeps a path prefix', () => {
+    expect(normaliseUrl('https://example.com/hive/')).toBe('https://example.com/hive');
+  });
+
+  it('rejects HTTP for remote hosts', () => {
+    expect(() => normaliseUrl('http://hive.example.com')).toThrow('must use HTTPS');
+  });
+
+  it('allows HTTP for localhost', () => {
+    expect(normaliseUrl('http://localhost:8000')).toBe('http://localhost:8000');
+    expect(normaliseUrl('http://127.0.0.1:8000')).toBe('http://127.0.0.1:8000');
+    expect(normaliseUrl('http://[::1]:8000')).toBe('http://[::1]:8000');
+  });
+
+  it('rejects credentials in the URL', () => {
+    expect(() => normaliseUrl('https://user:pass@hive.example.com')).toThrow('username or password');
+  });
+
+  it('rejects invalid URLs', () => {
+    expect(() => normaliseUrl('https://exa mple.com')).toThrow('Invalid URL');
   });
 });
