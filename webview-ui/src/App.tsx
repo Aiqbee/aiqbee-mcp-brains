@@ -36,9 +36,7 @@ export function reducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
     case 'SERVERS_CHANGED': {
       // A server that is now signed in (or gone) no longer needs its banners or form.
-      const pending = new Set(
-        action.servers.filter((s) => s.status === 'signedOut' || s.status === 'authExpired').map((s) => s.id),
-      );
+      const pending = new Set(action.servers.filter((s) => !s.signedIn).map((s) => s.id));
       const keep = <T,>(record: Record<string, T>) =>
         Object.fromEntries(Object.entries(record).filter(([id]) => pending.has(id)));
       return {

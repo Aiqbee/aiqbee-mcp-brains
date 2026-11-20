@@ -147,6 +147,8 @@ export interface ServerViewModel {
   baseUrl: string;
   status: ServerStatusView;
   statusMessage?: string;
+  /** A sign-in is stored for this server (it may still be offline). */
+  signedIn: boolean;
   user?: Pick<UserDto, 'givenName' | 'familyName' | 'email'>;
   authProviders: string[];
   /** A user-added Hive Server (removable from the UI). */

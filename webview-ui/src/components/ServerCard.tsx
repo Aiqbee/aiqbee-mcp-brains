@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { AuthAction, ServerViewModel, SignInProvider } from '../types';
-import { hasSession } from '../types';
+import { canSignIn as offersSignIn } from '../types';
 
 interface ServerCardProps {
   server: ServerViewModel;
@@ -43,9 +43,9 @@ export function ServerCard({
 }: ServerCardProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const signedIn = hasSession(server);
+  const signedIn = server.signedIn;
   const signingIn = server.status === 'signingIn';
-  const canSignIn = server.status === 'signedOut' || server.status === 'authExpired';
+  const canSignIn = offersSignIn(server);
   const hasEntra = server.authProviders.includes('entra');
   const hasGoogle = server.authProviders.includes('google');
   const hasEmail = server.authProviders.includes('email');

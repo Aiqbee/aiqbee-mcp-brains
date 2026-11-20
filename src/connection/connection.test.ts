@@ -104,6 +104,16 @@ describe('ConnectionManager', () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
+    it('rejects a second concurrent add of the same URL', async () => {
+      const results = await Promise.allSettled([
+        manager.addHive('hive.example.com'),
+        manager.addHive('https://hive.example.com/'),
+      ]);
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      expect(results.find((r) => r.status === 'rejected')).toMatchObject({ reason: expect.any(DuplicateServerError) });
+      expect(manager.list()).toHaveLength(2);
+    });
+
     it('keeps only supported auth providers', async () => {
       fetchMock.mockResolvedValue(jsonResponse(hiveDiscovery({ authProviders: ['entra', 'saml', 'local'] })));
       const entry = await manager.addHive('hive.example.com');
@@ -230,6 +240,33 @@ describe('ConnectionManager', () => {
       expect(manager.list()).toHaveLength(2);
     });
 
+    it('does not lose a server the user added while discovery for a settings entry was running', async () => {
+      let release!: () => void;
+      fetchMock.mockImplementation(async (url: string) => {
+        if (url.startsWith('https://slow.example.com')) {
+          await new Promise<void>((r) => { release = r; });
+        }
+        return jsonResponse(hiveDiscovery());
+      });
+
+      const sync = manager.syncSettingServers([{ url: 'https://slow.example.com' }]);
+      await vi.waitFor(() => expect(release).toBeDefined());
+      await manager.addHive('hive.example.com');
+      release();
+      await sync;
+
+      expect(manager.findByUrl('https://hive.example.com')).toBeDefined();
+      expect(manager.findByUrl('https://slow.example.com')).toBeDefined();
+    });
+
+    it('runs overlapping syncs one after another without duplicating entries', async () => {
+      await Promise.all([
+        manager.syncSettingServers([{ url: 'https://hive.example.com' }]),
+        manager.syncSettingServers([{ url: 'https://hive.example.com' }]),
+      ]);
+      expect(manager.list().filter((s) => s.baseUrl === 'https://hive.example.com')).toHaveLength(1);
+    });
+
     it('does nothing when the settings are unchanged', async () => {
       await manager.syncSettingServers([{ url: 'https://hive.example.com' }]);
       memento.update.mockClear();
@@ -255,6 +292,7 @@ describe('normaliseUrl', () => {
   it('allows HTTP for localhost', () => {
     expect(normaliseUrl('http://localhost:8000')).toBe('http://localhost:8000');
     expect(normaliseUrl('http://127.0.0.1:8000')).toBe('http://127.0.0.1:8000');
+    expect(normaliseUrl('http://[::1]:8000')).toBe('http://[::1]:8000');
   });
 
   it('rejects credentials in the URL', () => {

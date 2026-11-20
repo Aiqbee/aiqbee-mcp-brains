@@ -198,6 +198,7 @@ export function toViewModel(session: ServerSession, webAppUrl: string): ServerVi
     baseUrl: entry.baseUrl,
     status: session.status,
     statusMessage: session.statusMessage,
+    signedIn: session.hasSession,
     user: session.user
       ? { givenName: session.user.givenName, familyName: session.user.familyName, email: session.user.email }
       : undefined,

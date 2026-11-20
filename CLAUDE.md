@@ -27,7 +27,7 @@ If the brain is not connected, the key practices are summarised below.
 1. Branch from `develop` — `feature/<name>` or `fix/<name>`
 2. Self-review before commit (dead code, duplicates, bad practices)
 3. PR to `develop` — never push directly
-4. Wait for CodeRabbit review and CI/CD checks before merging
+4. Do your own senior-developer review of the full PR diff (CodeRabbit is no longer used), fix what it finds, and wait for CI/CD checks before merging
 5. Never squash merge — `gh pr merge --merge --delete-branch`
 
 ## Architecture Rules

@@ -9,6 +9,7 @@ const cloud: ServerViewModel = {
   label: 'Aiqbee Cloud',
   baseUrl: 'https://api.aiqbee.com',
   status: 'signedOut',
+  signedIn: false,
   authProviders: ['entra'],
   removable: false,
   managed: false,
@@ -40,7 +41,7 @@ describe('AccountPage', () => {
   });
 
   it('hides the welcome once any server is signed in', () => {
-    renderPage([{ ...cloud, status: 'connected' }]);
+    renderPage([{ ...cloud, status: 'connected', signedIn: true }]);
     expect(screen.queryByText('Aiqbee Brain Manager')).toBeNull();
   });
 

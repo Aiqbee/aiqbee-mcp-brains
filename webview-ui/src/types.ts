@@ -10,6 +10,8 @@ export interface ServerViewModel {
   baseUrl: string;
   status: ServerStatus;
   statusMessage?: string;
+  /** A sign-in is stored for this server (it may still be offline). */
+  signedIn: boolean;
   user?: { givenName: string; familyName: string; email: string };
   authProviders: string[];
   removable: boolean;
@@ -25,7 +27,7 @@ export interface AuthAction {
 
 export type SignInProvider = 'entra' | 'google';
 
-/** Servers that hold a session (signed in, even if currently unreachable). */
-export function hasSession(server: ServerViewModel): boolean {
-  return server.status === 'connected' || server.status === 'offline' || server.status === 'error';
+/** Whether the card should offer sign-in buttons. */
+export function canSignIn(server: ServerViewModel): boolean {
+  return !server.signedIn && server.status !== 'signingIn' && server.status !== 'unsupportedAuth';
 }

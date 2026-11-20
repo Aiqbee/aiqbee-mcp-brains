@@ -32,10 +32,16 @@ export class ServerSession {
   readonly neuronService: NeuronService;
 
   private _status: ServerStatus = 'signedOut';
+  /**
+   * Whether a sign-in is stored. Kept apart from status because a server can
+   * be offline or failing both with and without a stored session.
+   */
+  private sessionStored = false;
   private _statusMessage: string | undefined;
   private _user: UserDto | undefined;
   private _brains: BrainWithAccessDto[] | undefined;
   private _brainsError: string | undefined;
+  private _brainsVersion = 0;
   private brainsLoad: Promise<BrainWithAccessDto[]> | undefined;
   private lastEntry: ServerEntry;
   private readonly disposables: vscode.Disposable[] = [];
@@ -64,6 +70,7 @@ export class ServerSession {
     this.disposables.push(
       this.authService.onAuthStateChanged((state) => {
         this._brainsError = undefined;
+        this.sessionStored = state.authenticated;
         if (state.authenticated) {
           this._user = state.user;
           this._brains = undefined;
@@ -92,15 +99,19 @@ export class ServerSession {
   /** Brains from the last successful load, or undefined if never loaded. */
   get brains(): BrainWithAccessDto[] | undefined { return this._brains; }
   get isLoadingBrains(): boolean { return this.brainsLoad !== undefined; }
+  /** Increments on every successful brains load, so caches keyed on it know to refresh. */
+  get brainsVersion(): number { return this._brainsVersion; }
   /** Message from the last failed brains load, cleared by the next success. */
   get brainsError(): string | undefined { return this._brainsError; }
+  /** True when a sign-in is stored for this server, whatever its current status. */
   get hasSession(): boolean {
-    return this._status === 'connected' || this._status === 'offline' || this._status === 'error';
+    return this.sessionStored;
   }
 
   /** Read the stored session. A stored session is assumed valid until the first API call says otherwise. */
   async initialize(): Promise<void> {
     const state = await this.authService.initialize();
+    this.sessionStored = state.authenticated;
     if (state.authenticated && !this.isUnsupported()) {
       this._user = state.user;
       this.setStatus(this.entry.needsDiscovery ? 'offline' : 'connected');
@@ -137,6 +148,7 @@ export class ServerSession {
       .then((brains) => {
         this._brains = Array.isArray(brains) ? brains : [];
         this._brainsError = undefined;
+        this._brainsVersion++;
         return this._brains;
       }, (err: unknown) => {
         this._brainsError = err instanceof Error ? err.message : String(err);
@@ -252,6 +264,7 @@ export class ServerSession {
 
   private async expire(): Promise<void> {
     this._status = 'authExpired';
+    this.sessionStored = false;
     this._user = undefined;
     this._brains = undefined;
     await this.tokenStorage.clear();

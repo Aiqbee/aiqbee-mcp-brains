@@ -11,6 +11,7 @@ function server(overrides: Partial<ServerViewModel> = {}): ServerViewModel {
     label: 'Aiqbee Cloud',
     baseUrl: 'https://api.aiqbee.com',
     status: 'signedOut',
+    signedIn: false,
     authProviders: ['entra', 'google', 'email'],
     removable: false,
     managed: false,
@@ -70,7 +71,7 @@ describe('reducer', () => {
     state = reducer(state, { type: 'ERROR', serverId: 'cloud', message: 'bad password' });
     state = reducer(state, { type: 'AUTH_ACTION_REQUIRED', serverId: 'cloud', action: { state: 'PendingApproval', message: 'wait' } });
 
-    state = reducer(state, { type: 'SERVERS_CHANGED', servers: [server({ status: 'connected' })] });
+    state = reducer(state, { type: 'SERVERS_CHANGED', servers: [server({ status: 'connected', signedIn: true })] });
 
     expect(state.emailFormFor).toBeUndefined();
     expect(state.errors).toEqual({});

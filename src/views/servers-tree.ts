@@ -55,10 +55,31 @@ export class ServersTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
   private readonly counts = new Map<string, BrainCounts>();
+  /** The brains load each server's cached counts were taken against. */
+  private readonly countsVersion = new Map<string, number>();
   private readonly disposables: vscode.Disposable[] = [];
 
   constructor(private readonly sessions: SessionManager) {
-    this.disposables.push(sessions.onDidChange(() => this.refresh()));
+    this.disposables.push(sessions.onDidChange((session) => {
+      if (session) {
+        this.invalidateCountsIfReloaded(session);
+      }
+      this.refresh();
+    }));
+  }
+
+  /** Drop a server's cached tooltip counts once its brain list has been reloaded. */
+  private invalidateCountsIfReloaded(session: ServerSession): void {
+    if (this.countsVersion.get(session.serverId) === session.brainsVersion) {
+      return;
+    }
+    this.countsVersion.set(session.serverId, session.brainsVersion);
+    const prefix = `${session.serverId}:`;
+    for (const key of [...this.counts.keys()]) {
+      if (key.startsWith(prefix)) {
+        this.counts.delete(key);
+      }
+    }
   }
 
   refresh(): void {
@@ -133,24 +154,32 @@ export class ServersTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
     const serverId = session.serverId;
     const arg = { type: 'server', serverId } satisfies ServerNode;
 
-    switch (session.status) {
-      case 'signedOut':
-      case 'authExpired':
+    if (session.status === 'signingIn') {
+      return [{
+        type: 'placeholder', serverId, key: 'signing-in', label: 'Waiting for sign-in in your browser…',
+        icon: 'loading~spin',
+        command: { command: 'aiqbee.cancelSignIn', title: 'Cancel Sign In', arguments: [arg] },
+      }];
+    }
+    if (session.status === 'unsupportedAuth') {
+      return [{
+        type: 'placeholder', serverId, key: 'unsupported',
+        label: 'This server has no sign-in method the extension supports', icon: 'info',
+      }];
+    }
+    if (!session.hasSession) {
+      // A signed-out server that also failed discovery: explain, and offer a retry.
+      if (session.status === 'offline' || session.status === 'error') {
         return [{
-          type: 'placeholder', serverId, key: 'sign-in', label: 'Sign in…', icon: 'sign-in',
-          command: { command: 'aiqbee.signIn', title: 'Sign In', arguments: [arg] },
+          type: 'placeholder', serverId, key: 'retry',
+          label: session.statusMessage || 'Could not reach this server', icon: 'refresh',
+          command: { command: 'aiqbee.refresh', title: 'Retry', arguments: [arg] },
         }];
-      case 'signingIn':
-        return [{
-          type: 'placeholder', serverId, key: 'signing-in', label: 'Waiting for sign-in in your browser…',
-          icon: 'loading~spin',
-          command: { command: 'aiqbee.cancelSignIn', title: 'Cancel Sign In', arguments: [arg] },
-        }];
-      case 'unsupportedAuth':
-        return [{
-          type: 'placeholder', serverId, key: 'unsupported',
-          label: 'This server has no sign-in method the extension supports', icon: 'info',
-        }];
+      }
+      return [{
+        type: 'placeholder', serverId, key: 'sign-in', label: 'Sign in…', icon: 'sign-in',
+        command: { command: 'aiqbee.signIn', title: 'Sign In', arguments: [arg] },
+      }];
     }
 
     const brains = session.brains;
@@ -218,7 +247,8 @@ export class ServersTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
     }
     item.tooltip = tooltip;
 
-    const parts = ['server', status, entry.kind];
+    // Menus match on these parts (see package.json "view/item/context").
+    const parts = ['server', status, entry.kind, session.hasSession ? 'session' : 'nosession'];
     if (entry.origin === 'user') { parts.push('removable'); }
     if (entry.origin === 'setting') { parts.push('managed'); }
     item.contextValue = parts.join('.');
@@ -227,7 +257,7 @@ export class ServersTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
 
   private brainItem(node: BrainNode): vscode.TreeItem {
     const session = this.sessions.get(node.serverId);
-    const offline = session?.status === 'offline' || session?.status === 'error';
+    const offline = session?.status === 'offline';
     const item = new vscode.TreeItem(node.brain.name, vscode.TreeItemCollapsibleState.None);
     item.id = `brain:${node.serverId}:${node.brain.id}`;
     item.description = [accessLevelLabel(node.brain.accessLevel), offline ? 'offline' : '']

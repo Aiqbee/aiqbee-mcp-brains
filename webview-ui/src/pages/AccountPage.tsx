@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { ServerCard } from '../components/ServerCard';
 import type { AuthAction, ServerViewModel, SignInProvider } from '../types';
-import { hasSession } from '../types';
 
 interface AccountPageProps {
   servers: ServerViewModel[];
@@ -39,7 +38,7 @@ export function AccountPage({
   onDismiss,
 }: AccountPageProps) {
   const [hiveUrl, setHiveUrl] = useState('');
-  const anySignedIn = servers.some(hasSession);
+  const anySignedIn = servers.some((s) => s.signedIn);
 
   const submitHive = (e: React.FormEvent) => {
     e.preventDefault();

@@ -81,10 +81,10 @@ describe('ServersTreeProvider', () => {
     const locked = tree.getTreeItem(server('hive-2'));
 
     expect(cloud.description).toBe('Sign in');
-    expect(cloud.contextValue).toBe('server.signedOut.cloud');
-    expect(hive.contextValue).toBe('server.signedOut.hive.removable');
+    expect(cloud.contextValue).toBe('server.signedOut.cloud.nosession');
+    expect(hive.contextValue).toBe('server.signedOut.hive.nosession.removable');
     expect(locked.description).toBe('No supported sign-in method');
-    expect(locked.contextValue).toBe('server.unsupportedAuth.hive.removable');
+    expect(locked.contextValue).toBe('server.unsupportedAuth.hive.nosession.removable');
     expect((locked.iconPath as any).id).toBe('error');
   });
 
@@ -115,6 +115,44 @@ describe('ServersTreeProvider', () => {
     expect(tree.getTreeItem(server('hive-1')).description).toBe('Offline');
     expect(children).toHaveLength(2);
     expect(tree.getTreeItem(children[0]).description).toBe('Owner · offline');
+  });
+
+  it('treats a signed-out server that cannot be reached as signed out, with a retry', async () => {
+    await setup([HIVE]);
+    await sessions.require('hive-1').refresh(); // discovery fails: fetch only answers brains
+
+    const item = tree.getTreeItem(server('hive-1'));
+    const [child] = tree.getChildren(server('hive-1')) as PlaceholderNode[];
+
+    expect(item.description).toBe('Offline');
+    expect(item.contextValue).toBe('server.offline.hive.nosession.removable');
+    expect(child.key).toBe('retry');
+  });
+
+  it('marks a signed-in server as having a session, even when offline', async () => {
+    await setup([HIVE], { 'hive-1': { accessToken: 't' } });
+    await sessions.require('hive-1').refresh();
+
+    expect(tree.getTreeItem(server('hive-1')).contextValue).toBe('server.offline.hive.session.removable');
+  });
+
+  it('refetches tooltip counts after the brain list reloads', async () => {
+    await setup([HIVE], { 'hive-1': { accessToken: 't' } });
+    let total = 3;
+    fetchMock.mockImplementation(async (url: string) => jsonResponse(
+      url.includes('/api/brains/with-access') ? BRAINS : { records: [], totalRecords: total, page: 1, totalPages: 1 },
+    ));
+    const session = sessions.require('hive-1');
+    await session.loadBrains();
+    const first = (tree.getChildren(server('hive-1')) as TreeNode[])[0];
+    await tree.resolveTreeItem(tree.getTreeItem(first), first);
+
+    total = 9;
+    await session.loadBrains(true);
+    const again = (tree.getChildren(server('hive-1')) as TreeNode[])[0];
+    const item = await tree.resolveTreeItem(tree.getTreeItem(again), again);
+
+    expect((item.tooltip as any).value).toContain('9 neurons');
   });
 
   it('offers a retry instead of reloading forever when the brain list fails', async () => {

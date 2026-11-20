@@ -35,6 +35,7 @@ export class BrainGraphPanel {
     this.panel = panel;
     this.key = graphPanelKey(session.serverId, brainId);
     this.neuronService = session.neuronService;
+    this.sessionAvailable = session.hasSession;
     this.panel.webview.html = this.getHtml();
 
     this.disposables.push(
@@ -51,7 +52,7 @@ export class BrainGraphPanel {
       }),
       // A signed-out or expired server keeps the graph visible but read-only.
       session.onDidChange(() => {
-        const available = session.status === 'connected' || session.status === 'offline';
+        const available = session.hasSession;
         if (available !== this.sessionAvailable) {
           this.sessionAvailable = available;
           this.postSessionState();
@@ -128,24 +129,24 @@ export class BrainGraphPanel {
 
       // Phase 2: Neuron types (usually small, needed for colors)
       log.appendLine(`[${this.brainName}] Fetching neuron types...`);
-      const neuronTypes = await this.neuronService.listNeuronTypes(this.brainId);
+      const neuronTypes = await this.session.call(() => this.neuronService.listNeuronTypes(this.brainId));
       log.appendLine(`[${this.brainName}] Got ${neuronTypes.length} neuron types`);
       this.panel.webview.postMessage({ type: 'graphNeuronTypes', neuronTypes });
 
       // Phase 3: Neurons (paged, progressive)
       log.appendLine(`[${this.brainName}] Fetching neurons...`);
-      const neurons = await this.neuronService.listNeuronsProgressive(this.brainId, (page, items) => {
+      const neurons = await this.session.call(() => this.neuronService.listNeuronsProgressive(this.brainId, (page, items) => {
         log.appendLine(`[${this.brainName}] Neurons page ${page}: ${items.length} items`);
         this.panel.webview.postMessage({ type: 'graphNeuronsPage', neurons: items, page });
-      });
+      }));
       log.appendLine(`[${this.brainName}] Total neurons: ${neurons.length}`);
 
       // Phase 4: Synapses (paged, progressive)
       log.appendLine(`[${this.brainName}] Fetching synapses...`);
-      const synapses = await this.neuronService.listSynapsesProgressive(this.brainId, (page, items) => {
+      const synapses = await this.session.call(() => this.neuronService.listSynapsesProgressive(this.brainId, (page, items) => {
         log.appendLine(`[${this.brainName}] Synapses page ${page}: ${items.length} items`);
         this.panel.webview.postMessage({ type: 'graphSynapsesPage', synapses: items, page });
-      });
+      }));
       log.appendLine(`[${this.brainName}] Total synapses: ${synapses.length}`);
 
       // Phase 5: Signal complete

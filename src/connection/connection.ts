@@ -83,6 +83,7 @@ export class ConnectionManager {
   readonly onDidRemoveServer = this._onDidRemoveServer.event;
 
   private servers: ServerEntry[];
+  private settingsSync: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly globalState: vscode.Memento) {
     this.servers = this.load();
@@ -114,6 +115,11 @@ export class ConnectionManager {
     }
 
     const discovery = await fetchDiscovery(baseUrl);
+    // Discovery can take seconds; another add of the same URL may have finished meanwhile.
+    const added = this.findByUrl(baseUrl);
+    if (added) {
+      throw new DuplicateServerError(added);
+    }
     const entry: ServerEntry = {
       id: crypto.randomUUID(),
       kind: 'hive',
@@ -171,29 +177,41 @@ export class ConnectionManager {
    * new URLs, refresh labels, and drop entries whose URL was removed. A URL
    * that is unreachable is still added (needsDiscovery) so it shows as offline.
    */
-  async syncSettingServers(settings: { url: string; label?: string }[]): Promise<void> {
+  syncSettingServers(settings: { url: string; label?: string }[]): Promise<void> {
+    // Serialise syncs: activation and a settings change can overlap.
+    const run = this.settingsSync.then(() => this.doSyncSettingServers(settings));
+    this.settingsSync = run.catch(() => undefined);
+    return run;
+  }
+
+  private async doSyncSettingServers(settings: { url: string; label?: string }[]): Promise<void> {
     const wanted = new Map<string, { url: string; label?: string }>();
     for (const s of settings) {
       wanted.set(s.url.toLowerCase(), s);
     }
 
-    let next = this.servers.filter(
-      (s) => s.origin !== 'setting' || wanted.has(s.baseUrl.toLowerCase()),
+    // Discover new URLs first. The list is read again afterwards, so servers
+    // added or renamed while discovery was running are never lost.
+    const known = new Set(this.servers.map((s) => s.baseUrl.toLowerCase()));
+    const built = await Promise.all(
+      [...wanted].filter(([key]) => !known.has(key)).map(([, s]) => buildSettingEntry(s)),
     );
-    const removed = this.servers.filter((s) => !next.includes(s));
 
-    for (const [key, setting] of wanted) {
-      const existing = next.find((s) => s.baseUrl.toLowerCase() === key);
-      if (existing) {
-        if (existing.origin === 'setting' && setting.label && existing.label !== setting.label) {
-          next = next.map((s) => (s === existing ? { ...s, label: setting.label! } : s));
-        }
-        continue;
+    const current = this.servers;
+    const removed = current.filter((s) => s.origin === 'setting' && !wanted.has(s.baseUrl.toLowerCase()));
+    let next = current
+      .filter((s) => !removed.includes(s))
+      .map((s) => {
+        const label = wanted.get(s.baseUrl.toLowerCase())?.label;
+        return s.origin === 'setting' && label && s.label !== label ? { ...s, label } : s;
+      });
+    for (const entry of built) {
+      if (!next.some((s) => s.baseUrl.toLowerCase() === entry.baseUrl.toLowerCase())) {
+        next = [...next, entry];
       }
-      next.push(await buildSettingEntry(setting));
     }
 
-    if (removed.length === 0 && sameEntries(next, this.servers)) {
+    if (removed.length === 0 && sameEntries(next, current)) {
       return;
     }
     await this.save(next);
@@ -221,9 +239,22 @@ export class ConnectionManager {
     return entry;
   }
 
+  /**
+   * Update the in-memory list immediately, so a concurrent operation that
+   * resumes during the write already sees it, then persist. A failed write
+   * restores the previous list (unless something else has changed it since).
+   */
   private async save(servers: ServerEntry[]): Promise<void> {
-    await this.globalState.update(SERVERS_STORAGE_KEY, servers);
+    const previous = this.servers;
     this.servers = servers;
+    try {
+      await this.globalState.update(SERVERS_STORAGE_KEY, servers);
+    } catch (err) {
+      if (this.servers === servers) {
+        this.servers = previous;
+      }
+      throw err;
+    }
     this._onDidChangeServers.fire();
   }
 

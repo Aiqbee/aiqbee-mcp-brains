@@ -166,7 +166,7 @@
       "view/item/context": [
         {
           "command": "aiqbee.signIn",
-          "when": "view == aiqbee.serversView && viewItem =~ /^server\\.(signedOut|authExpired)\\./",
+          "when": "view == aiqbee.serversView && viewItem =~ /\\.nosession/ && !(viewItem =~ /^server\\.(signingIn|unsupportedAuth)\\./)",
           "group": "inline@1"
         },
         {
@@ -186,12 +186,12 @@
         },
         {
           "command": "aiqbee.signIn",
-          "when": "view == aiqbee.serversView && viewItem =~ /^server\\.(signedOut|authExpired)\\./",
+          "when": "view == aiqbee.serversView && viewItem =~ /\\.nosession/ && !(viewItem =~ /^server\\.(signingIn|unsupportedAuth)\\./)",
           "group": "1_session@1"
         },
         {
           "command": "aiqbee.signOut",
-          "when": "view == aiqbee.serversView && viewItem =~ /^server\\.(connected|offline|error)\\./",
+          "when": "view == aiqbee.serversView && viewItem =~ /\\.session(\\.|$)/",
           "group": "1_session@2"
         },
         {

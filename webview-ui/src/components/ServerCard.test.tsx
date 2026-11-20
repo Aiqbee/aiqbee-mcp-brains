@@ -10,6 +10,7 @@ function server(overrides: Partial<ServerViewModel> = {}): ServerViewModel {
     label: 'Team Hive',
     baseUrl: 'https://hive.example.com',
     status: 'signedOut',
+    signedIn: false,
     authProviders: ['entra', 'google'],
     removable: true,
     managed: false,
@@ -47,6 +48,7 @@ describe('ServerCard', () => {
   it('shows the signed-in user and a sign-out button when connected', () => {
     const { onSignOut } = renderCard({
       status: 'connected',
+      signedIn: true,
       user: { givenName: 'Ada', familyName: 'L', email: 'ada@example.com' },
     });
 
@@ -57,11 +59,18 @@ describe('ServerCard', () => {
   });
 
   it('keeps the session controls when offline and shows why', () => {
-    renderCard({ status: 'offline', statusMessage: 'Could not reach Team Hive.' });
+    renderCard({ status: 'offline', signedIn: true, statusMessage: 'Could not reach Team Hive.' });
 
     expect(screen.getByText('Offline')).toBeInTheDocument();
     expect(screen.getByText('Could not reach Team Hive.')).toBeInTheDocument();
     expect(screen.getByText('Sign Out')).toBeInTheDocument();
+  });
+
+  it('offers sign-in, not sign-out, for a signed-out server that is offline', () => {
+    renderCard({ status: 'offline', signedIn: false, statusMessage: 'Could not reach Team Hive.' });
+
+    expect(screen.getByText('Sign in with Microsoft')).toBeInTheDocument();
+    expect(screen.queryByText('Sign Out')).toBeNull();
   });
 
   it('explains a server with no supported sign-in method', () => {
