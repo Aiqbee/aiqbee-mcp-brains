@@ -2,7 +2,7 @@
 
 All notable changes to **Aiqbee MCP Brains** will be documented in this file.
 
-## [Unreleased]
+## [0.3.0] - 2026-11-21
 
 ### Added
 
