@@ -53,36 +53,198 @@
     "views": {
       "aiqbee-sidebar": [
         {
+          "id": "aiqbee.serversView",
+          "name": "Brains",
+          "icon": "media/aiqbee-sidebar.svg",
+          "contextualTitle": "Aiqbee Brains"
+        },
+        {
           "id": "aiqbee.brainManagerView",
           "type": "webview",
-          "name": "Brain Manager",
+          "name": "Account & Help",
           "visibility": "visible"
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "aiqbee.serversView",
+        "contents": "Sign in to see your brains and connect them to Claude Code, Codex, Cursor and other AI assistants.\n[Sign in to Aiqbee Cloud](command:aiqbee.signIn?%22cloud%22)\n[Add a Hive Server](command:aiqbee.addServer)\nNew to Aiqbee? [Create a free account](command:aiqbee.signUp)."
+      }
+    ],
     "commands": [
       {
         "command": "aiqbee.openBrainManager",
-        "title": "Aiqbee: Open Brain Manager",
+        "title": "Open Brain Manager",
+        "category": "Aiqbee",
         "icon": "$(window)"
       },
       {
+        "command": "aiqbee.addServer",
+        "title": "Add Hive Server…",
+        "category": "Aiqbee",
+        "icon": "$(add)"
+      },
+      {
+        "command": "aiqbee.renameServer",
+        "title": "Rename Server…",
+        "category": "Aiqbee"
+      },
+      {
+        "command": "aiqbee.removeServer",
+        "title": "Remove Server",
+        "category": "Aiqbee",
+        "icon": "$(trash)"
+      },
+      {
         "command": "aiqbee.signIn",
-        "title": "Aiqbee: Sign In"
+        "title": "Sign In",
+        "category": "Aiqbee",
+        "icon": "$(sign-in)"
       },
       {
         "command": "aiqbee.signOut",
-        "title": "Aiqbee: Sign Out"
+        "title": "Sign Out",
+        "category": "Aiqbee",
+        "icon": "$(sign-out)"
+      },
+      {
+        "command": "aiqbee.cancelSignIn",
+        "title": "Cancel Sign In",
+        "category": "Aiqbee",
+        "icon": "$(close)"
       },
       {
         "command": "aiqbee.refresh",
-        "title": "Aiqbee: Refresh Brains"
+        "title": "Refresh",
+        "category": "Aiqbee",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "aiqbee.createBrain",
+        "title": "Create Brain…",
+        "category": "Aiqbee",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "aiqbee.openBrainGraph",
+        "title": "Open Brain Graph",
+        "category": "Aiqbee",
+        "icon": "$(type-hierarchy)"
       },
       {
         "command": "aiqbee.addMcpConnection",
-        "title": "Aiqbee: Add MCP Connection"
+        "title": "Add MCP Connection…",
+        "category": "Aiqbee",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "aiqbee.signUp",
+        "title": "Create a Free Account",
+        "category": "Aiqbee"
+      },
+      {
+        "command": "aiqbee.openInWebApp",
+        "title": "Open in Web App",
+        "category": "Aiqbee",
+        "icon": "$(link-external)"
       }
     ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "aiqbee.addServer",
+          "when": "view == aiqbee.serversView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "aiqbee.refresh",
+          "when": "view == aiqbee.serversView",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "aiqbee.signIn",
+          "when": "view == aiqbee.serversView && viewItem =~ /^server\\.(signedOut|authExpired)\\./",
+          "group": "inline@1"
+        },
+        {
+          "command": "aiqbee.cancelSignIn",
+          "when": "view == aiqbee.serversView && viewItem =~ /^server\\.signingIn\\./",
+          "group": "inline@1"
+        },
+        {
+          "command": "aiqbee.createBrain",
+          "when": "view == aiqbee.serversView && viewItem =~ /^server\\.connected\\./",
+          "group": "inline@1"
+        },
+        {
+          "command": "aiqbee.refresh",
+          "when": "view == aiqbee.serversView && viewItem =~ /^server\\./",
+          "group": "inline@2"
+        },
+        {
+          "command": "aiqbee.signIn",
+          "when": "view == aiqbee.serversView && viewItem =~ /^server\\.(signedOut|authExpired)\\./",
+          "group": "1_session@1"
+        },
+        {
+          "command": "aiqbee.signOut",
+          "when": "view == aiqbee.serversView && viewItem =~ /^server\\.(connected|offline|error)\\./",
+          "group": "1_session@2"
+        },
+        {
+          "command": "aiqbee.createBrain",
+          "when": "view == aiqbee.serversView && viewItem =~ /^server\\.connected\\./",
+          "group": "2_brains@1"
+        },
+        {
+          "command": "aiqbee.openInWebApp",
+          "when": "view == aiqbee.serversView && viewItem =~ /^server\\.[a-zA-Z]+\\.cloud/",
+          "group": "2_brains@2"
+        },
+        {
+          "command": "aiqbee.renameServer",
+          "when": "view == aiqbee.serversView && viewItem =~ /^server\\./",
+          "group": "3_manage@1"
+        },
+        {
+          "command": "aiqbee.removeServer",
+          "when": "view == aiqbee.serversView && viewItem =~ /^server\\..*\\.removable/",
+          "group": "3_manage@2"
+        },
+        {
+          "command": "aiqbee.addMcpConnection",
+          "when": "view == aiqbee.serversView && viewItem =~ /^brain\\./",
+          "group": "inline@1"
+        },
+        {
+          "command": "aiqbee.openBrainGraph",
+          "when": "view == aiqbee.serversView && viewItem =~ /^brain\\./",
+          "group": "1_open@1"
+        },
+        {
+          "command": "aiqbee.addMcpConnection",
+          "when": "view == aiqbee.serversView && viewItem =~ /^brain\\./",
+          "group": "1_open@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "aiqbee.renameServer",
+          "when": "false"
+        },
+        {
+          "command": "aiqbee.cancelSignIn",
+          "when": "false"
+        },
+        {
+          "command": "aiqbee.openInWebApp",
+          "when": "false"
+        }
+      ]
+    },
     "configuration": {
       "title": "Aiqbee MCP Brains",
       "properties": {
@@ -94,6 +256,36 @@
             "production"
           ],
           "description": "API environment to connect to."
+        },
+        "aiqbee.servers": {
+          "type": "array",
+          "scope": "application",
+          "default": [],
+          "markdownDescription": "Hive Servers to add automatically. Each entry is a URL or `{ \"url\": \"…\", \"label\": \"…\" }`. Only read from user settings, never from a workspace. Servers listed here can be signed out of but not removed from the Brains view.",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "url"
+                ],
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "description": "Hive Server address, e.g. hive.yourcompany.com"
+                  },
+                  "label": {
+                    "type": "string",
+                    "description": "Display name in the Brains view"
+                  }
+                },
+                "additionalProperties": false
+              }
+            ]
+          }
         }
       }
     }

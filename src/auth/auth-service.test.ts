@@ -1,25 +1,16 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import * as http from 'http';
 import { AuthService, AuthStateError } from './auth-service.js';
+import { ApiRequestError, NetworkError } from '../api/api-client.js';
 import { TokenStorage } from './token-storage.js';
-import type { ConnectionManager, Connection } from '../connection/connection.js';
+import type { ServerEntry } from '../connection/connection.js';
+import { createSecrets } from '../__mocks__/test-helpers.js';
 import type { ApiClient } from '../api/api-client.js';
 
 // --- Mock helpers -------------------------------------------------------
 
-function createMockTokenStorage(): TokenStorage {
-  return {
-    getAccessToken: vi.fn().mockResolvedValue(undefined),
-    setAccessToken: vi.fn().mockResolvedValue(undefined),
-    getRefreshToken: vi.fn().mockResolvedValue(undefined),
-    setRefreshToken: vi.fn().mockResolvedValue(undefined),
-    getAuthType: vi.fn().mockResolvedValue(undefined),
-    setAuthType: vi.fn().mockResolvedValue(undefined),
-    getUserJson: vi.fn().mockResolvedValue(undefined),
-    setUserJson: vi.fn().mockResolvedValue(undefined),
-    clear: vi.fn().mockResolvedValue(undefined),
-    hasTokens: vi.fn().mockResolvedValue(false),
-  } as unknown as TokenStorage;
+function createTokenStorage(serverId = 'cloud'): TokenStorage {
+  return new TokenStorage(createSecrets(), serverId);
 }
 
 function createMockApiClient(): ApiClient {
@@ -33,25 +24,29 @@ function createMockApiClient(): ApiClient {
   } as unknown as ApiClient;
 }
 
-function createMockConnectionManager(overrides?: Partial<Connection>): ConnectionManager {
-  const conn: Connection = {
-    backendType: 'cloud',
+function createEntry(overrides: Partial<ServerEntry> = {}): ServerEntry {
+  return {
+    id: 'cloud',
+    kind: 'cloud',
+    label: 'Aiqbee Cloud',
     baseUrl: 'https://api.aiqbee.com',
     mcpBaseUrl: 'https://mcp.aiqbee.com',
     authProviders: ['entra', 'google', 'email'],
-    label: 'Aiqbee Cloud',
+    origin: 'builtin',
+    addedAt: '2026-01-01T00:00:00.000Z',
     ...overrides,
   };
-  return {
-    getConnection: vi.fn().mockReturnValue(conn),
-    isHive: vi.fn().mockReturnValue(conn.backendType === 'hive'),
-    connectToHive: vi.fn(),
-    connectToCloud: vi.fn(),
-    disconnect: vi.fn(),
-    dispose: vi.fn(),
-    onConnectionChanged: vi.fn(),
-  } as unknown as ConnectionManager;
 }
+
+const HIVE_OVERRIDES: Partial<ServerEntry> = {
+  id: 'hive-1',
+  kind: 'hive',
+  label: 'hive.company.com',
+  baseUrl: 'https://hive.company.com',
+  mcpBaseUrl: 'https://hive.company.com',
+  authProviders: ['entra', 'google'],
+  origin: 'user',
+};
 
 /**
  * Send a GET request to a localhost callback server and return the response status.
@@ -80,15 +75,15 @@ async function hitCallbackServer(
 describe('AuthService', () => {
   let tokenStorage: TokenStorage;
   let apiClient: ApiClient;
-  let connectionManager: ConnectionManager;
+  let entry: ServerEntry;
   let authService: AuthService;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    tokenStorage = createMockTokenStorage();
+    tokenStorage = createTokenStorage();
     apiClient = createMockApiClient();
-    connectionManager = createMockConnectionManager();
-    authService = new AuthService(tokenStorage, apiClient, connectionManager);
+    entry = createEntry();
+    authService = new AuthService(() => entry, tokenStorage, apiClient);
   });
 
   afterEach(() => {
@@ -133,18 +128,15 @@ describe('AuthService', () => {
 
       await signInPromise;
 
-      expect(tokenStorage.setAccessToken).toHaveBeenCalledWith('jwt-access-token');
-      expect(tokenStorage.setRefreshToken).toHaveBeenCalledWith('jwt-refresh-token');
-      expect(tokenStorage.setAuthType).toHaveBeenCalledWith('google');
-      expect(tokenStorage.setUserJson).toHaveBeenCalled();
+      expect(await tokenStorage.getAccessToken()).toBe('jwt-access-token');
+      expect(await tokenStorage.getRefreshToken()).toBe('jwt-refresh-token');
+      expect(await tokenStorage.getAuthType()).toBe('google');
+      expect((await tokenStorage.getSession())?.user?.email).toBe('test@example.com');
     });
 
     it('opens browser to hive URL when connected to hive', async () => {
-      connectionManager = createMockConnectionManager({
-        backendType: 'hive',
-        baseUrl: 'https://hive.company.com',
-      });
-      authService = new AuthService(tokenStorage, apiClient, connectionManager);
+      entry = createEntry(HIVE_OVERRIDES);
+      authService = new AuthService(() => entry, tokenStorage, apiClient);
 
       const vscode = await import('vscode');
       const openExternalSpy = vi.spyOn(vscode.env, 'openExternal').mockResolvedValue(true);
@@ -171,8 +163,8 @@ describe('AuthService', () => {
 
       await signInPromise;
 
-      expect(tokenStorage.setAccessToken).toHaveBeenCalledWith('hive-jwt');
-      expect(tokenStorage.setAuthType).toHaveBeenCalledWith('google');
+      expect(await tokenStorage.getAccessToken()).toBe('hive-jwt');
+      expect(await tokenStorage.getAuthType()).toBe('google');
     });
 
     it('accepts accessToken/refreshToken param names (cloud backend convention)', async () => {
@@ -198,8 +190,8 @@ describe('AuthService', () => {
 
       await signInPromise;
 
-      expect(tokenStorage.setAccessToken).toHaveBeenCalledWith('cloud-jwt');
-      expect(tokenStorage.setRefreshToken).toHaveBeenCalledWith('cloud-refresh');
+      expect(await tokenStorage.getAccessToken()).toBe('cloud-jwt');
+      expect(await tokenStorage.getRefreshToken()).toBe('cloud-refresh');
     });
 
     it('rejects on CSRF state mismatch', async () => {
@@ -345,11 +337,8 @@ describe('AuthService', () => {
     });
 
     it('uses brokered auth for hive Microsoft', async () => {
-      connectionManager = createMockConnectionManager({
-        backendType: 'hive',
-        baseUrl: 'https://hive.company.com',
-      });
-      authService = new AuthService(tokenStorage, apiClient, connectionManager);
+      entry = createEntry(HIVE_OVERRIDES);
+      authService = new AuthService(() => entry, tokenStorage, apiClient);
 
       const vscode = await import('vscode');
       const openExternalSpy = vi.spyOn(vscode.env, 'openExternal').mockResolvedValue(true);
@@ -378,7 +367,7 @@ describe('AuthService', () => {
 
       await signInPromise;
 
-      expect(tokenStorage.setAuthType).toHaveBeenCalledWith('microsoft');
+      expect(await tokenStorage.getAuthType()).toBe('microsoft');
     });
 
     it('throws AuthStateError when Aiqbee backend returns SignUpRequired for Microsoft', async () => {
@@ -426,7 +415,7 @@ describe('AuthService', () => {
       await expect(signInPromise).rejects.toThrow(AuthStateError);
       await expect(signInPromise).rejects.toThrow('No account found');
       // Should NOT have stored any tokens
-      expect(tokenStorage.setAccessToken).not.toHaveBeenCalled();
+      expect(await tokenStorage.hasTokens()).toBe(false);
     });
 
     it('handles integer state=3 (Active) from /api/accounts/signin', async () => {
@@ -470,9 +459,9 @@ describe('AuthService', () => {
 
       await signInPromise;
 
-      expect(tokenStorage.setAccessToken).toHaveBeenCalledWith('aiqbee-jwt');
-      expect(tokenStorage.setRefreshToken).toHaveBeenCalledWith('aiqbee-refresh');
-      expect(tokenStorage.setAuthType).toHaveBeenCalledWith('microsoft');
+      expect(await tokenStorage.getAccessToken()).toBe('aiqbee-jwt');
+      expect(await tokenStorage.getRefreshToken()).toBe('aiqbee-refresh');
+      expect(await tokenStorage.getAuthType()).toBe('microsoft');
     });
 
     it('handles integer state=0 (SignUp) from /api/accounts/signin as SignUpRequired', async () => {
@@ -514,14 +503,13 @@ describe('AuthService', () => {
 
       await expect(signInPromise).rejects.toThrow(AuthStateError);
       await expect(signInPromise).rejects.toThrow('No account found');
-      expect(tokenStorage.setAccessToken).not.toHaveBeenCalled();
+      expect(await tokenStorage.hasTokens()).toBe(false);
     });
   });
 
   describe('refreshToken', () => {
     it('uses /api/vscode/auth/refresh for cloud Google', async () => {
-      (tokenStorage.getRefreshToken as any).mockResolvedValue('google-refresh-tok');
-      (tokenStorage.getAuthType as any).mockResolvedValue('google');
+      await tokenStorage.setSession({ accessToken: 'old', refreshToken: 'google-refresh-tok', authType: 'google' });
       (apiClient.postPublic as any).mockResolvedValue({
         accessToken: 'new-access',
         refreshToken: 'new-refresh',
@@ -529,18 +517,18 @@ describe('AuthService', () => {
 
       const result = await authService.refreshToken();
 
-      expect(result).toBe(true);
+      expect(result).toBe('ok');
       expect(apiClient.postPublic).toHaveBeenCalledWith(
         '/api/vscode/auth/refresh',
         { refreshToken: 'google-refresh-tok' },
       );
-      expect(tokenStorage.setAccessToken).toHaveBeenCalledWith('new-access');
-      expect(tokenStorage.setRefreshToken).toHaveBeenCalledWith('new-refresh');
+      expect(await tokenStorage.getAccessToken()).toBe('new-access');
+      expect(await tokenStorage.getRefreshToken()).toBe('new-refresh');
+      expect(await tokenStorage.getAuthType()).toBe('google');
     });
 
     it('uses /api/auth/refresh for cloud email', async () => {
-      (tokenStorage.getRefreshToken as any).mockResolvedValue('email-refresh-tok');
-      (tokenStorage.getAuthType as any).mockResolvedValue('email');
+      await tokenStorage.setSession({ accessToken: 'old', refreshToken: 'email-refresh-tok', authType: 'email' });
       (apiClient.postPublic as any).mockResolvedValue({
         accessToken: 'new-email-access',
         refreshToken: 'new-email-refresh',
@@ -549,21 +537,17 @@ describe('AuthService', () => {
 
       const result = await authService.refreshToken();
 
-      expect(result).toBe(true);
+      expect(result).toBe('ok');
       expect(apiClient.postPublic).toHaveBeenCalledWith(
         '/api/auth/refresh',
         { refreshToken: 'email-refresh-tok' },
       );
+      expect(await tokenStorage.getAccessToken()).toBe('new-email-access');
     });
 
     it('uses /api/vscode/auth/refresh for hive (any auth type)', async () => {
-      connectionManager = createMockConnectionManager({
-        backendType: 'hive',
-        baseUrl: 'https://hive.company.com',
-      });
-      authService = new AuthService(tokenStorage, apiClient, connectionManager);
-
-      (tokenStorage.getRefreshToken as any).mockResolvedValue('hive-refresh-tok');
+      entry = createEntry(HIVE_OVERRIDES);
+      await tokenStorage.setSession({ accessToken: 'old', refreshToken: 'hive-refresh-tok', authType: 'microsoft' });
       (apiClient.postPublic as any).mockResolvedValue({
         accessToken: 'hive-new-access',
         refreshToken: 'hive-new-refresh',
@@ -571,7 +555,7 @@ describe('AuthService', () => {
 
       const result = await authService.refreshToken();
 
-      expect(result).toBe(true);
+      expect(result).toBe('ok');
       expect(apiClient.postPublic).toHaveBeenCalledWith(
         '/api/vscode/auth/refresh',
         { refreshToken: 'hive-refresh-tok' },
@@ -579,9 +563,7 @@ describe('AuthService', () => {
     });
 
     it('uses Microsoft token endpoint for cloud Microsoft', async () => {
-      (tokenStorage.getRefreshToken as any).mockResolvedValue('ms-refresh-tok');
-      (tokenStorage.getAuthType as any).mockResolvedValue('microsoft');
-
+      await tokenStorage.setSession({ accessToken: 'old', refreshToken: 'ms-refresh-tok', authType: 'microsoft' });
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
@@ -592,20 +574,102 @@ describe('AuthService', () => {
 
       const result = await authService.refreshToken();
 
-      expect(result).toBe(true);
-      // Should call Microsoft's token endpoint directly
+      expect(result).toBe('ok');
       const fetchMock = vi.mocked(fetch);
       expect(fetchMock).toHaveBeenCalledOnce();
       expect(fetchMock.mock.calls[0][0]).toContain('login.microsoftonline.com');
-      expect(tokenStorage.setAccessToken).toHaveBeenCalledWith('new-ms-access');
+      expect(await tokenStorage.getAccessToken()).toBe('new-ms-access');
     });
 
-    it('returns false when no refresh token stored', async () => {
-      (tokenStorage.getRefreshToken as any).mockResolvedValue(undefined);
+    it('returns rejected when no refresh token is stored', async () => {
+      await tokenStorage.setSession({ accessToken: 'old' });
+      expect(await authService.refreshToken()).toBe('rejected');
+    });
 
-      const result = await authService.refreshToken();
+    it('returns rejected when the server refuses the refresh token (4xx)', async () => {
+      await tokenStorage.setSession({ accessToken: 'old', refreshToken: 'r', authType: 'google' });
+      (apiClient.postPublic as any).mockRejectedValue(new ApiRequestError('Unauthorized', 401));
 
-      expect(result).toBe(false);
+      expect(await authService.refreshToken()).toBe('rejected');
+      expect(await tokenStorage.getAccessToken()).toBe('old');
+    });
+
+    it('returns unreachable when the server fails (5xx)', async () => {
+      await tokenStorage.setSession({ accessToken: 'old', refreshToken: 'r', authType: 'email' });
+      (apiClient.postPublic as any).mockRejectedValue(new ApiRequestError('Bad Gateway', 502));
+
+      expect(await authService.refreshToken()).toBe('unreachable');
+    });
+
+    it('returns unreachable when the server cannot be reached', async () => {
+      entry = createEntry(HIVE_OVERRIDES);
+      await tokenStorage.setSession({ accessToken: 'old', refreshToken: 'r', authType: 'google' });
+      (apiClient.postPublic as any).mockRejectedValue(new NetworkError('offline'));
+
+      expect(await authService.refreshToken()).toBe('unreachable');
+      expect(await tokenStorage.getAccessToken()).toBe('old');
+    });
+
+    it('returns rejected when Microsoft refuses the refresh token, unreachable when it cannot be reached', async () => {
+      await tokenStorage.setSession({ accessToken: 'old', refreshToken: 'r', authType: 'microsoft' });
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 400 }));
+      expect(await authService.refreshToken()).toBe('rejected');
+
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('fetch failed')));
+      expect(await authService.refreshToken()).toBe('unreachable');
+    });
+  });
+
+  describe('separate servers', () => {
+    it('two services can sign in at the same time with their own callback servers and state', async () => {
+      const vscode = await import('vscode');
+      const openExternalSpy = vi.spyOn(vscode.env, 'openExternal').mockResolvedValue(true);
+      const hiveStorage = createTokenStorage('hive-1');
+      const hiveEntry = createEntry(HIVE_OVERRIDES);
+      const hiveService = new AuthService(() => hiveEntry, hiveStorage, apiClient);
+
+      const cloudSignIn = authService.signInWithGoogle();
+      const hiveSignIn = hiveService.signInWithGoogle();
+
+      await vi.waitFor(() => {
+        expect(openExternalSpy).toHaveBeenCalledTimes(2);
+      });
+
+      const urls = openExternalSpy.mock.calls.map((c) => new URL((c[0] as any).path));
+      const cloudUrl = urls.find((u) => u.origin === 'https://api.aiqbee.com')!;
+      const hiveUrl = urls.find((u) => u.origin === 'https://hive.company.com')!;
+      expect(cloudUrl.searchParams.get('state')).not.toBe(hiveUrl.searchParams.get('state'));
+      expect(cloudUrl.searchParams.get('redirect_port')).not.toBe(hiveUrl.searchParams.get('redirect_port'));
+
+      await hitCallbackServer(Number(hiveUrl.searchParams.get('redirect_port')), '/oauth/callback', {
+        token: 'hive-jwt',
+        state: hiveUrl.searchParams.get('state')!,
+      });
+      await hitCallbackServer(Number(cloudUrl.searchParams.get('redirect_port')), '/oauth/callback', {
+        token: 'cloud-jwt',
+        state: cloudUrl.searchParams.get('state')!,
+      });
+      await Promise.all([cloudSignIn, hiveSignIn]);
+
+      expect(await tokenStorage.getAccessToken()).toBe('cloud-jwt');
+      expect(await hiveStorage.getAccessToken()).toBe('hive-jwt');
+      hiveService.dispose();
+    });
+
+    it('keeps the base URL path prefix for a Hive Server hosted under a path', async () => {
+      entry = createEntry({ ...HIVE_OVERRIDES, baseUrl: 'https://example.com/hive' });
+      const vscode = await import('vscode');
+      const openExternalSpy = vi.spyOn(vscode.env, 'openExternal').mockResolvedValue(true);
+
+      const signInPromise = authService.signInWithGoogle();
+      signInPromise.catch(() => {});
+      await vi.waitFor(() => {
+        expect(openExternalSpy).toHaveBeenCalledOnce();
+      });
+
+      expect(new URL((openExternalSpy.mock.calls[0][0] as any).path).pathname).toBe('/hive/api/vscode/auth/login');
+      authService.cancelSignIn();
     });
   });
 

@@ -1,98 +1,88 @@
 import { useCallback, useEffect, useReducer, useState } from 'react';
 import { useVsCode, useMessageListener } from './hooks/useVsCode';
-import { LoginPage } from './pages/LoginPage';
-import { BrainsPage } from './pages/BrainsPage';
+import { AccountPage } from './pages/AccountPage';
 import { HelpPage } from './pages/HelpPage';
 import { PromptsPage } from './pages/PromptsPage';
+import type { AuthAction, ServerViewModel } from './types';
 
-interface UserDto {
-  id: string;
-  givenName: string;
-  familyName: string;
-  email: string;
-}
-
-interface AppState {
-  page: 'login' | 'brains';
-  authenticated: boolean;
-  user?: UserDto;
+export interface AppState {
+  loaded: boolean;
+  servers: ServerViewModel[];
   environment?: string;
-  loading: boolean;
-  error?: string;
-  backendType: 'cloud' | 'hive';
-  hiveLabel?: string;
-  authProviders: string[];
-  webAppUrl?: string;
-  authActionState?: string;
-  authActionMessage?: string;
-  authActionWebAppUrl?: string;
+  /** Server whose email sign-in form is open. */
+  emailFormFor?: string;
+  authActions: Record<string, AuthAction>;
+  errors: Record<string, string>;
+  generalError?: string;
 }
 
-type AppAction =
-  | { type: 'AUTH_STATE'; authenticated: boolean; user?: UserDto; environment?: string }
-  | { type: 'SET_LOADING'; loading: boolean }
-  | { type: 'SET_ERROR'; error: string }
-  | { type: 'CLEAR_ERROR' }
-  | { type: 'CONNECTION_CHANGED'; backendType: 'cloud' | 'hive'; label: string; authProviders: string[]; webAppUrl?: string }
-  | { type: 'AUTH_ACTION_REQUIRED'; state: string; message: string; webAppUrl: string };
+export type AppAction =
+  | { type: 'SERVERS_CHANGED'; servers: ServerViewModel[]; environment?: string }
+  | { type: 'SHOW_EMAIL_FORM'; serverId: string }
+  | { type: 'TOGGLE_EMAIL_FORM'; serverId: string }
+  | { type: 'AUTH_ACTION_REQUIRED'; serverId: string; action: AuthAction }
+  | { type: 'ERROR'; serverId?: string; message: string }
+  | { type: 'DISMISS'; serverId?: string };
 
-function reducer(state: AppState, action: AppAction): AppState {
+export const initialState: AppState = { loaded: false, servers: [], authActions: {}, errors: {} };
+
+function without<T>(record: Record<string, T>, key: string): Record<string, T> {
+  if (!(key in record)) { return record; }
+  const { [key]: _removed, ...rest } = record;
+  return rest;
+}
+
+export function reducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
-    case 'AUTH_STATE':
+    case 'SERVERS_CHANGED': {
+      // A server that is now signed in (or gone) no longer needs its banners or form.
+      const pending = new Set(
+        action.servers.filter((s) => s.status === 'signedOut' || s.status === 'authExpired').map((s) => s.id),
+      );
+      const keep = <T,>(record: Record<string, T>) =>
+        Object.fromEntries(Object.entries(record).filter(([id]) => pending.has(id)));
       return {
         ...state,
-        authenticated: action.authenticated,
-        user: action.user,
+        loaded: true,
+        servers: action.servers,
         environment: action.environment ?? state.environment,
-        page: action.authenticated ? 'brains' : 'login',
-        loading: false,
-        error: undefined,
-        authActionState: undefined,
-        authActionMessage: undefined,
-        authActionWebAppUrl: undefined,
+        emailFormFor: state.emailFormFor && pending.has(state.emailFormFor) ? state.emailFormFor : undefined,
+        authActions: keep(state.authActions),
+        errors: keep(state.errors),
       };
-    case 'SET_LOADING':
-      return { ...state, loading: action.loading };
-    case 'SET_ERROR':
-      return { ...state, error: action.error, loading: false };
-    case 'CLEAR_ERROR':
-      return { ...state, error: undefined, authActionState: undefined, authActionMessage: undefined, authActionWebAppUrl: undefined };
-    case 'CONNECTION_CHANGED':
-      return {
-        ...state,
-        backendType: action.backendType,
-        hiveLabel: action.backendType === 'hive' ? action.label : undefined,
-        authProviders: action.authProviders,
-        webAppUrl: action.webAppUrl,
-        error: undefined,
-      };
+    }
+    case 'SHOW_EMAIL_FORM':
+      return { ...state, emailFormFor: action.serverId };
+    case 'TOGGLE_EMAIL_FORM':
+      return { ...state, emailFormFor: state.emailFormFor === action.serverId ? undefined : action.serverId };
     case 'AUTH_ACTION_REQUIRED':
-      return {
-        ...state,
-        loading: false,
-        authActionState: action.state,
-        authActionMessage: action.message,
-        authActionWebAppUrl: action.webAppUrl,
-      };
+      return { ...state, authActions: { ...state.authActions, [action.serverId]: action.action } };
+    case 'ERROR':
+      return action.serverId
+        ? { ...state, errors: { ...state.errors, [action.serverId]: action.message } }
+        : { ...state, generalError: action.message };
+    case 'DISMISS':
+      return action.serverId
+        ? { ...state, authActions: without(state.authActions, action.serverId), errors: without(state.errors, action.serverId) }
+        : { ...state, generalError: undefined };
     default:
       return state;
   }
 }
 
-type Tab = 'brains' | 'help' | 'prompts';
+type Tab = 'account' | 'help' | 'prompts';
+
+const TABS: { id: Tab; label: string }[] = [
+  { id: 'account', label: 'Account' },
+  { id: 'help', label: 'Help' },
+  { id: 'prompts', label: 'Prompts' },
+];
 
 export default function App() {
   const { postMessage } = useVsCode();
-  const [state, dispatch] = useReducer(reducer, {
-    page: 'login',
-    authenticated: false,
-    loading: true,
-    backendType: 'cloud',
-    authProviders: ['entra', 'google', 'email'],
-  });
-  const [activeTab, setActiveTab] = useState<Tab>('brains');
+  const [state, dispatch] = useReducer(reducer, initialState);
+  const [activeTab, setActiveTab] = useState<Tab>('account');
 
-  // Listen for messages from extension host
   useMessageListener(
     useCallback((event: MessageEvent) => {
       const message = event.data;
@@ -100,123 +90,75 @@ export default function App() {
         return;
       }
       switch (message.command) {
-        case 'authStateChanged':
-          dispatch({
-            type: 'AUTH_STATE',
-            authenticated: message.payload.authenticated,
-            user: message.payload.user,
-            environment: message.payload.environment,
-          });
+        case 'serversChanged':
+          dispatch({ type: 'SERVERS_CHANGED', servers: message.payload.servers, environment: message.payload.environment });
           break;
-        case 'loading':
-          dispatch({ type: 'SET_LOADING', loading: message.payload.loading });
-          break;
-        case 'error':
-          dispatch({ type: 'SET_ERROR', error: message.payload.message });
-          break;
-        case 'connectionChanged':
-          dispatch({
-            type: 'CONNECTION_CHANGED',
-            backendType: message.payload.backendType,
-            label: message.payload.label,
-            authProviders: message.payload.authProviders,
-            webAppUrl: message.payload.webAppUrl,
-          });
+        case 'showEmailSignIn':
+          setActiveTab('account');
+          dispatch({ type: 'SHOW_EMAIL_FORM', serverId: message.payload.serverId });
           break;
         case 'authActionRequired':
           dispatch({
             type: 'AUTH_ACTION_REQUIRED',
-            state: message.payload.state,
-            message: message.payload.message,
-            webAppUrl: message.payload.webAppUrl,
+            serverId: message.payload.serverId,
+            action: { state: message.payload.state, message: message.payload.message, signUpUrl: message.payload.signUpUrl },
           });
+          break;
+        case 'error':
+          dispatch({ type: 'ERROR', serverId: message.payload.serverId, message: message.payload.message });
           break;
       }
     }, []),
   );
 
-  // Request auth state on mount
   useEffect(() => {
     postMessage({ command: 'ready' });
   }, [postMessage]);
 
-  if (state.loading && !state.authenticated && state.page === 'login') {
+  if (!state.loaded) {
     return (
-      <>
-        <div className="loading-container">
-          <div className="spinner" />
-          <span>Loading...</span>
-        </div>
-      </>
+      <div className="loading-container">
+        <div className="spinner" />
+        <span>Loading...</span>
+      </div>
     );
   }
 
-  // Pre-auth pages (no tabs)
-  if (state.page === 'login') {
-    return (
-      <>
-      <LoginPage
-        loading={state.loading}
-        error={state.error}
-        environment={state.environment}
-        backendType={state.backendType}
-        hiveLabel={state.hiveLabel}
-        authProviders={state.authProviders}
-        onSignInMicrosoft={() => postMessage({ command: 'signInMicrosoft' })}
-        onSignInGoogle={() => postMessage({ command: 'signInGoogle' })}
-        onSignInEmail={(email, password) =>
-          postMessage({ command: 'signInEmail', payload: { email, password } })
-        }
-        webAppUrl={state.webAppUrl}
-        authActionState={state.authActionState}
-        authActionMessage={state.authActionMessage}
-        authActionWebAppUrl={state.authActionWebAppUrl}
-        onClearAuthAction={() => dispatch({ type: 'CLEAR_ERROR' })}
-        onOpenExternal={(url) => postMessage({ command: 'openExternal', payload: { url } })}
-        onConnectToHive={(url) => postMessage({ command: 'connectToHive', payload: { url } })}
-        onDisconnectHive={() => postMessage({ command: 'disconnectHive' })}
-        onCancelSignIn={() => postMessage({ command: 'cancelSignIn' })}
-      />
-      </>
-    );
-  }
-
-  // Authenticated: show tab bar + content
   return (
     <div className="app-shell">
-      {state.backendType === 'hive' && state.hiveLabel && (
-        <div className="hive-banner">
-          {state.hiveLabel}
-        </div>
-      )}
-      <div className="tab-bar">
-        <button
-          type="button"
-          className={`tab-btn${activeTab === 'brains' ? ' active' : ''}`}
-          onClick={() => setActiveTab('brains')}
-        >
-          Brains
-        </button>
-        <button
-          type="button"
-          className={`tab-btn${activeTab === 'help' ? ' active' : ''}`}
-          onClick={() => setActiveTab('help')}
-        >
-          Help
-        </button>
-        <button
-          type="button"
-          className={`tab-btn${activeTab === 'prompts' ? ' active' : ''}`}
-          onClick={() => setActiveTab('prompts')}
-        >
-          Prompts
-        </button>
+      <div className="tab-bar" role="tablist">
+        {TABS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            className={`tab-btn${activeTab === tab.id ? ' active' : ''}`}
+            onClick={() => setActiveTab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
       <div className="tab-content">
-        {activeTab === 'brains' && (
-          <BrainsPage
-            user={state.user}
-            onSignOut={() => postMessage({ command: 'signOut' })}
+        {activeTab === 'account' && (
+          <AccountPage
+            servers={state.servers}
+            environment={state.environment}
+            emailFormFor={state.emailFormFor}
+            authActions={state.authActions}
+            errors={state.errors}
+            generalError={state.generalError}
+            onSignIn={(serverId, provider) => postMessage({ command: 'signIn', payload: { serverId, provider } })}
+            onToggleEmailForm={(serverId) => dispatch({ type: 'TOGGLE_EMAIL_FORM', serverId })}
+            onSignInEmail={(serverId, email, password) =>
+              postMessage({ command: 'signInEmail', payload: { serverId, email, password } })}
+            onCancelSignIn={(serverId) => postMessage({ command: 'cancelSignIn', payload: { serverId } })}
+            onSignOut={(serverId) => postMessage({ command: 'signOut', payload: { serverId } })}
+            onRemove={(serverId) => postMessage({ command: 'removeServer', payload: { serverId } })}
+            onAddServer={(url) => postMessage({ command: 'addServer', payload: { url } })}
+            onOpenExternal={(url) => postMessage({ command: 'openExternal', payload: { url } })}
+            onDismiss={(serverId) => dispatch({ type: 'DISMISS', serverId })}
           />
         )}
         {activeTab === 'help' && <HelpPage />}

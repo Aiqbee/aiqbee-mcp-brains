@@ -406,7 +406,7 @@ Claude Code-only parts, and why: the `claude mcp add` CLI and its scopes; projec
 
 - Create the file and folder if missing. Never rewrite existing content.
 
-**Running CLIs.** Use `child_process.execFile` with an argument array. The name is validated against `^[a-z0-9_]+$` and the URL is rebuilt from a parsed `URL`, so no user-controlled text reaches a shell. On Windows the CLIs are `.cmd` shims that need `shell: true`; the same validation makes that safe. Confirm the exact `claude mcp add` flags with `claude mcp add --help` during implementation.
+**Running CLIs.** Use `child_process.execFile` with an argument array. The name is validated against `^[a-z0-9_]+$` and the URL is rebuilt from a parsed `URL`, so no user-controlled text reaches a shell. On Windows the CLIs are `.cmd` shims that need `shell: true`; the same validation makes that safe. The `claude mcp add` flags were confirmed in task 0.2. `--scope` is always passed, because the CLI defaults to `local`.
 
 **Migration of old entries.** When the chosen JSON target contains keys starting with `Aiqbee Brain: ` whose URL matches a known server's MCP base, offer "Rename to the new format". Declining leaves them untouched.
 
@@ -669,6 +669,15 @@ Before starting each phase, write the phase's steps to `tasks/todo.md` and check
 | 0.1 | Manual test of the two link assumptions (section 6.2) on Windows and macOS, stable VS Code, extension uninstalled: raw URI install-then-replay, and the `vscode.dev/redirect` wrapper. Record the result in this spec and pick the main or fallback design for F2. |
 | 0.2 | Run `claude mcp add --help` and `codex mcp add --help`; record the exact flags for F1. |
 | 0.3 | Confirm the published version and set `package.json` accordingly before the first release from this branch. |
+
+**Phase 0 results (2026-11-20)**
+
+- **0.1 — pending, manual.** It splits in two, because the published extension has no URI handler yet, so a replay cannot be observed today:
+  - **0.1a (now):** with the extension uninstalled, open `vscode://aiqbee.aiqbee-mcp-brains/open?v=1` and record whether VS Code offers to install it. Then open `https://vscode.dev/redirect?url=vscode%3A%2F%2Faiqbee.aiqbee-mcp-brains%2Fopen%3Fv%3D1` in a browser, and in a GitHub README preview, and record whether the browser hands off to VS Code.
+  - **0.1b (after task 2.8 ships in a pre-release):** confirm that, after install, the URI is replayed to the new handler.
+  - F2 is not started until 0.1a is recorded. Phase 1 does not depend on it.
+- **0.2 — done for Claude Code.** `claude mcp add [options] <name> <commandOrUrl>` with `-t/--transport http` and `-s/--scope local|user|project`. **The default scope is `local`, so the extension must always pass `--scope` explicitly.** Other flags available: `--callback-port`, `--client-id`, `-H/--header`. The Codex CLI is not installed on the dev machine, so its syntax stays as documented (`codex mcp add <name> --url <url>`, `codex mcp login <name>`), with the non-zero-exit fallback to text append. Re-check when Codex is installed.
+- **0.3 — done; no change needed.** Published version is `v0.2.7` (the latest tag; `master` `package.json`). `develop` shows 0.2.2 because releases are bumped on `master` only (`npm version patch` after the merge), and the version line has never been changed on `develop`, so merges keep `master`'s value. Leave `package.json` alone on this branch.
 
 ### Phase 1: Sidebar fix and multi-server
 

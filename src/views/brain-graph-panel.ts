@@ -1,48 +1,77 @@
 import * as vscode from 'vscode';
-import { NeuronService } from '../api/neuron-service.js';
+import type { NeuronService } from '../api/neuron-service.js';
+import type { BrainWithAccessDto } from '../api/types.js';
+import type { ServerSession } from '../connection/server-session.js';
 
 const log = vscode.window.createOutputChannel('Aiqbee Brain Graph');
+
+/** Title for a graph panel; names the server only when more than one is configured. */
+export function graphPanelTitle(brainName: string, serverLabel: string, showServerLabel: boolean): string {
+  return showServerLabel ? `Brain Graph: ${brainName} — ${serverLabel}` : `Brain Graph: ${brainName}`;
+}
+
+/** Panels are keyed by server and brain, so same-named brains on different servers stay separate. */
+export function graphPanelKey(serverId: string, brainId: string): string {
+  return `${serverId}:${brainId}`;
+}
 
 export class BrainGraphPanel {
   public static readonly viewType = 'aiqbee.brainGraph';
   private static panels = new Map<string, BrainGraphPanel>();
   private readonly panel: vscode.WebviewPanel;
+  private readonly key: string;
+  private readonly neuronService: NeuronService;
+  private readonly disposables: vscode.Disposable[] = [];
+  private sessionAvailable = true;
 
   private constructor(
     panel: vscode.WebviewPanel,
     private readonly extensionUri: vscode.Uri,
-    private readonly neuronService: NeuronService,
+    private readonly session: ServerSession,
     private readonly brainId: string,
     private readonly brainName: string,
     private readonly canWrite: boolean,
   ) {
     this.panel = panel;
+    this.key = graphPanelKey(session.serverId, brainId);
+    this.neuronService = session.neuronService;
     this.panel.webview.html = this.getHtml();
 
-    this.panel.webview.onDidReceiveMessage(async (message) => {
-      switch (message.type) {
-        case 'ready':
-          await this.sendGraphData();
-          break;
-        case 'saveNeuron':
-          await this.handleSaveNeuron(message);
-          break;
-      }
-    });
+    this.disposables.push(
+      this.panel.webview.onDidReceiveMessage(async (message) => {
+        switch (message.type) {
+          case 'ready':
+            await this.sendGraphData();
+            this.postSessionState();
+            break;
+          case 'saveNeuron':
+            await this.handleSaveNeuron(message);
+            break;
+        }
+      }),
+      // A signed-out or expired server keeps the graph visible but read-only.
+      session.onDidChange(() => {
+        const available = session.status === 'connected' || session.status === 'offline';
+        if (available !== this.sessionAvailable) {
+          this.sessionAvailable = available;
+          this.postSessionState();
+        }
+      }),
+    );
 
     this.panel.onDidDispose(() => {
-      BrainGraphPanel.panels.delete(this.brainId);
+      BrainGraphPanel.panels.delete(this.key);
+      this.disposables.forEach((d) => d.dispose());
     });
   }
 
   static createOrShow(
     extensionUri: vscode.Uri,
-    neuronService: NeuronService,
-    brainId: string,
-    brainName: string,
-    canWrite: boolean,
+    session: ServerSession,
+    brain: Pick<BrainWithAccessDto, 'id' | 'name' | 'canWrite'>,
+    showServerLabel: boolean,
   ): void {
-    const existing = BrainGraphPanel.panels.get(brainId);
+    const existing = BrainGraphPanel.panels.get(graphPanelKey(session.serverId, brain.id));
     if (existing) {
       existing.panel.reveal(vscode.ViewColumn.One);
       return;
@@ -50,7 +79,7 @@ export class BrainGraphPanel {
 
     const panel = vscode.window.createWebviewPanel(
       BrainGraphPanel.viewType,
-      `Brain Graph: ${brainName}`,
+      graphPanelTitle(brain.name, session.entry.label, showServerLabel),
       vscode.ViewColumn.One,
       {
         enableScripts: true,
@@ -61,8 +90,29 @@ export class BrainGraphPanel {
       },
     );
 
-    const instance = new BrainGraphPanel(panel, extensionUri, neuronService, brainId, brainName, canWrite);
-    BrainGraphPanel.panels.set(brainId, instance);
+    const instance = new BrainGraphPanel(panel, extensionUri, session, brain.id, brain.name, brain.canWrite);
+    BrainGraphPanel.panels.set(instance.key, instance);
+  }
+
+  /** Close every graph panel that belongs to a server (used when the server is removed). */
+  static closeForServer(serverId: string): void {
+    for (const instance of [...BrainGraphPanel.panels.values()]) {
+      if (instance.session.serverId === serverId) {
+        instance.panel.dispose();
+      }
+    }
+  }
+
+  private serverLabelChip(): string {
+    return `<span class="stat-chip" title="${escapeHtml(this.session.entry.baseUrl)}">${escapeHtml(this.session.entry.label)}</span>`;
+  }
+
+  private postSessionState(): void {
+    this.panel.webview.postMessage(
+      this.sessionAvailable
+        ? { type: 'sessionRestored' }
+        : { type: 'sessionEnded', message: `Signed out of ${this.session.entry.label}. Sign in again to edit this brain.` },
+    );
   }
 
   private async sendGraphData(): Promise<void> {
@@ -72,7 +122,7 @@ export class BrainGraphPanel {
 
       // Phase 1: Counts (fast — pageSize=1 just to get totals)
       log.appendLine(`[${this.brainName}] Fetching counts...`);
-      const counts = await this.neuronService.getBrainCounts(this.brainId);
+      const counts = await this.session.call(() => this.neuronService.getBrainCounts(this.brainId));
       log.appendLine(`[${this.brainName}] Counts: ${counts.neurons} neurons, ${counts.neuronTypes} types, ${counts.synapses} synapses`);
       this.panel.webview.postMessage({ type: 'graphCounts', counts });
 
@@ -113,12 +163,15 @@ export class BrainGraphPanel {
 
   private async handleSaveNeuron(message: any): Promise<void> {
     try {
+      if (!this.canWrite || !this.sessionAvailable) {
+        throw new Error('This brain cannot be edited right now.');
+      }
       this.panel.webview.postMessage({ type: 'savingNeuron', neuronId: message.neuronId, saving: true });
-      await this.neuronService.updateNeuron(message.neuronId, {
+      await this.session.call(() => this.neuronService.updateNeuron(message.neuronId, {
         name: message.name,
         content: message.content,
         neuronTypeId: message.neuronTypeId,
-      });
+      }));
       this.panel.webview.postMessage({
         type: 'neuronSaved',
         neuronId: message.neuronId,
@@ -188,6 +241,20 @@ export class BrainGraphPanel {
       color: #b0b0b0;
     }
     .stat-chip strong { color: #e0e0e0; }
+
+    /* Shown when the brain's server is signed out */
+    #session-banner {
+      display: none;
+      position: absolute;
+      top: 40px; left: 0; right: 0;
+      z-index: 25;
+      padding: 6px 16px;
+      font-size: 12px;
+      background: var(--vscode-inputValidation-warningBackground, #352a05);
+      color: var(--vscode-editor-foreground, #d4d4d4);
+      border-bottom: 1px solid var(--vscode-inputValidation-warningBorder, #b89500);
+    }
+    #session-banner.visible { display: block; }
 
     /* Graph container */
     #graph-container {
@@ -392,8 +459,10 @@ export class BrainGraphPanel {
   </style>
 </head>
 <body>
+  <div id="session-banner" role="status"></div>
   <div id="stats-bar">
     <span class="brain-title">${escapeHtml(this.brainName)}</span>
+    ${this.serverLabelChip()}
     <span class="stat-chip"><strong id="stat-neurons">-</strong>&nbsp;neurons</span>
     <span class="stat-chip"><strong id="stat-types">-</strong>&nbsp;types</span>
     <span class="stat-chip"><strong id="stat-synapses">-</strong>&nbsp;synapses</span>
@@ -443,7 +512,9 @@ export class BrainGraphPanel {
   <script nonce="${nonce}">
   (function() {
     const vscode = acquireVsCodeApi();
-    const CAN_WRITE = ${canWriteJs};
+    const BRAIN_CAN_WRITE = ${canWriteJs};
+    let CAN_WRITE = BRAIN_CAN_WRITE;
+    const sessionBanner = document.getElementById('session-banner');
 
     // --- Theme detection ---
     function isDarkTheme() {
@@ -915,6 +986,18 @@ export class BrainGraphPanel {
         }
         case 'saveError':
           showSaveError(msg.message);
+          break;
+        case 'sessionEnded':
+          CAN_WRITE = false;
+          sessionBanner.textContent = msg.message;
+          sessionBanner.classList.add('visible');
+          if (currentPopupNode && popupOverlay.classList.contains('visible')) {
+            showNodePopup(currentPopupNode);
+          }
+          break;
+        case 'sessionRestored':
+          CAN_WRITE = BRAIN_CAN_WRITE;
+          sessionBanner.classList.remove('visible');
           break;
       }
     });

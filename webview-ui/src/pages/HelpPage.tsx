@@ -63,21 +63,32 @@ export function HelpPage() {
 
       <Section title="How do I add a brain connection?">
         <ol>
-          <li>Sign in and find your brain in the <strong>Brains</strong> tab.</li>
+          <li>Sign in on the <strong>Account</strong> tab, then find your brain under its server in the <strong>Brains</strong> view.</li>
           <li>
-            Click the <strong>+</strong> button next to the brain. You'll be prompted to choose a
-            target file:
+            Click the plug icon next to the brain (or right-click it and choose{' '}
+            <strong>Add MCP Connection</strong>). You'll be prompted to choose a target file:
             <ul>
-              <li>
-                <code>.claude/settings.json</code> — for Claude Code
-              </li>
-              <li>
-                <code>.mcp.json</code> — for Cursor, Windsurf, and other MCP-compatible tools
-              </li>
+              <li><code>.mcp.json</code> — Claude Code</li>
+              <li><code>.cursor/mcp.json</code> — Cursor</li>
+              <li><code>.vscode/mcp.json</code> — VS Code with GitHub Copilot</li>
+              <li><code>.roo/mcp.json</code> — Roo Code</li>
             </ul>
           </li>
           <li>The connection is written automatically. No manual editing needed.</li>
         </ol>
+      </Section>
+
+      <Section title="Can I use more than one server?">
+        <p>
+          Yes. You can be signed in to Aiqbee Cloud and any number of Hive Servers at the same time.
+          Each server appears in the <strong>Brains</strong> view with its own brains underneath.
+          Add a Hive Server with the <strong>+</strong> button in the Brains view title, or from the{' '}
+          <strong>Account</strong> tab. Signing out of one server never affects the others.
+        </p>
+        <p>
+          You can also list servers in the <code>aiqbee.servers</code> user setting so they are
+          added automatically, for example on every machine you sync your settings to.
+        </p>
       </Section>
 
       <Section title="Connection not working after setup?">

@@ -133,33 +133,44 @@ export interface BrainGraphData {
   counts: BrainCounts;
 }
 
-// Message types for webview ↔ extension host communication
+// Message types for webview ↔ extension host communication.
+// Every message that touches a server carries its serverId.
+
+export type ServerStatusView =
+  | 'signedOut' | 'signingIn' | 'connected' | 'authExpired' | 'offline' | 'unsupportedAuth' | 'error';
+
+/** What the Account view needs to show one server. */
+export interface ServerViewModel {
+  id: string;
+  kind: 'cloud' | 'hive';
+  label: string;
+  baseUrl: string;
+  status: ServerStatusView;
+  statusMessage?: string;
+  user?: Pick<UserDto, 'givenName' | 'familyName' | 'email'>;
+  authProviders: string[];
+  /** A user-added Hive Server (removable from the UI). */
+  removable: boolean;
+  /** Managed by the aiqbee.servers setting. */
+  managed: boolean;
+  /** Sign-up page, cloud only. */
+  signUpUrl?: string;
+}
+
+export type SignInProviderId = 'entra' | 'google';
+
 export type WebviewMessage =
-  | { command: 'signInMicrosoft' }
-  | { command: 'signInGoogle' }
-  | { command: 'signInEmail'; payload: EmailSignInDto }
-  | { command: 'signOut' }
-  | { command: 'getAuthState' }
-  | { command: 'listBrains' }
-  | { command: 'createBrain'; payload: BrainCreateDto }
-  | { command: 'getBrainCounts'; payload: { brainId: string } }
-  | { command: 'getBrainTemplates' }
-  | { command: 'addMcpConnection'; payload: { brainId: string; brainName: string } }
-  | { command: 'openBrainGraph'; payload: { brainId: string; brainName: string; canWrite: boolean } }
-  | { command: 'openExternal'; payload: { url: string } }
-  | { command: 'connectToHive'; payload: { url: string } }
-  | { command: 'disconnectHive' }
-  | { command: 'cancelSignIn' }
-  | { command: 'ready' };
+  | { command: 'ready' }
+  | { command: 'signIn'; payload: { serverId: string; provider: SignInProviderId } }
+  | { command: 'signInEmail'; payload: { serverId: string } & EmailSignInDto }
+  | { command: 'cancelSignIn'; payload: { serverId: string } }
+  | { command: 'signOut'; payload: { serverId: string } }
+  | { command: 'addServer'; payload: { url: string } }
+  | { command: 'removeServer'; payload: { serverId: string } }
+  | { command: 'openExternal'; payload: { url: string } };
 
 export type ExtensionMessage =
-  | { command: 'authStateChanged'; payload: { authenticated: boolean; user?: UserDto } }
-  | { command: 'brainsLoaded'; payload: BrainWithAccessDto[] }
-  | { command: 'brainCreated'; payload: BrainDto }
-  | { command: 'brainCounts'; payload: { brainId: string; counts: BrainCounts } }
-  | { command: 'brainTemplatesLoaded'; payload: BrainTemplateDto[] }
-  | { command: 'error'; payload: { message: string; command?: string } }
-  | { command: 'loading'; payload: { loading: boolean; command?: string } }
-  | { command: 'connectionChanged'; payload: { backendType: 'cloud' | 'hive'; label: string; authProviders: string[]; webAppUrl?: string } }
-  | { command: 'authActionRequired'; payload: { state: string; message: string; webAppUrl: string } }
-  | { command: 'subscriptionLimitReached'; payload: { errorCode: string; message: string; currentCount: number; maxAllowed: number; isHive: boolean } };
+  | { command: 'serversChanged'; payload: { servers: ServerViewModel[]; environment: string } }
+  | { command: 'showEmailSignIn'; payload: { serverId: string } }
+  | { command: 'authActionRequired'; payload: { serverId: string; state: string; message: string; signUpUrl?: string } }
+  | { command: 'error'; payload: { message: string; serverId?: string } };
