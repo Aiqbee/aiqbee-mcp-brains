@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { ApiClient, ApiRequestError, NetworkError } from './api-client.js';
+import { ApiClient, ApiRequestError, NetworkError, RefreshRefusedError } from './api-client.js';
 import { TokenStorage } from '../auth/token-storage.js';
 import type { ConnectionManager } from '../connection/connection.js';
 
@@ -230,6 +230,13 @@ describe('ApiClient', () => {
       client.setRefreshHandler(vi.fn().mockResolvedValue('unreachable'));
 
       await expect(client.get('/api/protected')).rejects.toBeInstanceOf(NetworkError);
+    });
+
+    it('throws RefreshRefusedError, not an expiry, when the refresh call is forbidden', async () => {
+      mockFetch({ ok: false, status: 401, statusText: 'Unauthorized', text: async () => '' });
+      client.setRefreshHandler(vi.fn().mockResolvedValue('refused'));
+
+      await expect(client.get('/api/protected')).rejects.toBeInstanceOf(RefreshRefusedError);
     });
   });
 

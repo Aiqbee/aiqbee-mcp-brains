@@ -5,7 +5,7 @@ import type { SessionManager } from '../connection/session-manager.js';
 import type { ServerSession } from '../connection/server-session.js';
 import { addMcpConnection } from '../mcp/mcp-config.js';
 import { accessLevelLabel } from '../views/servers-tree.js';
-import { messageOf, resolveSession, type ServerArg } from './server-commands.js';
+import { messageOf, resolveSession, serverIdOf, type ServerArg } from './server-commands.js';
 
 /** A brain as passed from the tree (BrainNode) or another caller. */
 export interface BrainArg {
@@ -89,13 +89,59 @@ export async function resolveBrain(
   return picked ? { session, brain: picked.brain } : undefined;
 }
 
+/**
+ * Describe a failed create in terms the user can act on. A 403 from a Hive
+ * Server is either its licence cap (JSON detail) or, on Hive builds that
+ * predate extension write support, its CSRF check (an HTML page).
+ */
+export function describeCreateBrainError(err: unknown, session: ServerSession): string {
+  if (err instanceof ApiRequestError && err.status === 403) {
+    const detail = serverDetail(err.body);
+    if (detail) {
+      return `${session.entry.label} refused to create the brain: ${detail}`;
+    }
+    return session.entry.kind === 'hive'
+      ? `${session.entry.label} refused to create the brain (403 Forbidden). This Hive Server may need updating to support creating brains from VS Code.`
+      : `${session.entry.label} refused to create the brain (403 Forbidden).`;
+  }
+  return `Could not create the brain on ${session.entry.label}: ${messageOf(err)}`;
+}
+
+/** The `detail` or `message` from a JSON error body, if there is one. */
+function serverDetail(body: unknown): string | undefined {
+  if (typeof body !== 'string' || !body.trim().startsWith('{')) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(body) as { detail?: unknown; message?: unknown };
+    const text = typeof parsed.detail === 'string' ? parsed.detail : parsed.message;
+    return typeof text === 'string' && text.trim() ? text.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function createBrain(deps: BrainCommandDeps, arg: ServerArg): Promise<void> {
+  // Offer every signed-in server, not only connected ones: a server that is
+  // offline or failing should say why when the create fails, not vanish from
+  // the list (or, with one server left, be silently replaced by another).
   const session = await resolveSession(deps.sessions, arg, {
     placeHolder: 'Create the brain on which server?',
-    filter: (s) => s.status === 'connected',
-    emptyMessage: 'Sign in to a server first.',
+    filter: (s) => s.hasSession,
   });
-  if (!session) { return; }
+  if (!session) {
+    if (!serverIdOf(arg) && !deps.sessions.all().some((s) => s.hasSession)) {
+      const action = await vscode.window.showWarningMessage('Sign in to a server to create a brain.', 'Sign In');
+      if (action === 'Sign In') {
+        await vscode.commands.executeCommand('aiqbee.signIn');
+      }
+    }
+    return;
+  }
+  if (!session.hasSession) {
+    void vscode.window.showWarningMessage(`Sign in to ${session.entry.label} to create a brain.`);
+    return;
+  }
   const isFirst = session.brains?.length === 0;
   const where = session.entry.label;
 
@@ -169,7 +215,7 @@ export async function createBrain(deps: BrainCommandDeps, arg: ServerArg): Promi
       }
       return;
     }
-    void vscode.window.showErrorMessage(`Could not create the brain: ${messageOf(err)}`);
+    void vscode.window.showErrorMessage(describeCreateBrainError(err, session));
   }
 }
 

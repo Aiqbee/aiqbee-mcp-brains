@@ -203,10 +203,57 @@ describe('SessionManager and ServerSession', () => {
       expect(session.status).toBe('offline');
       expect(await session.tokenStorage.hasTokens()).toBe(true);
 
-      routeFetch({ 'hive.example.com/api/vscode/auth/refresh': () => jsonResponse({}, 403) });
+      routeFetch({ 'hive.example.com/api/vscode/auth/refresh': () => jsonResponse({}, 401) });
       await session.refreshToken();
       expect(session.status).toBe('authExpired');
       expect(await session.tokenStorage.hasTokens()).toBe(false);
+    });
+
+    it('keeps the session and reports an error when the server forbids the refresh call (403)', async () => {
+      await setup([HIVE], { 'hive-1': { accessToken: 'a', refreshToken: 'r', authType: 'google' } });
+      const session = manager.require('hive-1');
+      routeFetch({ 'hive.example.com/api/vscode/auth/refresh': () => jsonResponse({ detail: 'CSRF token missing' }, 403) });
+
+      await session.refreshToken();
+
+      expect(session.status).toBe('error');
+      expect(session.statusMessage).toContain('may need updating');
+      expect(session.hasSession).toBe(true);
+      expect(await session.tokenStorage.hasTokens()).toBe(true);
+    });
+
+    it('keeps the session when a request needs a refresh and the refresh call is forbidden', async () => {
+      await setup([HIVE], { 'hive-1': { accessToken: 'a', refreshToken: 'r', authType: 'google' } });
+      routeFetch({
+        'hive.example.com/api/brains/with-access': () => jsonResponse({}, 401),
+        'hive.example.com/api/vscode/auth/refresh': () => jsonResponse({}, 403),
+      });
+      const session = manager.require('hive-1');
+
+      await expect(session.loadBrains()).rejects.toThrow('may need updating');
+
+      expect(session.status).toBe('error');
+      expect(await session.tokenStorage.hasTokens()).toBe(true);
+    });
+
+    it('the timer leaves a token alone until it is close to expiring', async () => {
+      const jwt = (expiresInMs: number) => {
+        const payload = Buffer.from(JSON.stringify({ exp: Math.floor((Date.now() + expiresInMs) / 1000) })).toString('base64url');
+        return `h.${payload}.s`;
+      };
+      await setup([HIVE], { 'hive-1': { accessToken: jwt(60 * 60 * 1000), refreshToken: 'r', authType: 'google' } });
+      const session = manager.require('hive-1');
+      const fetchMock = routeFetch({
+        'hive.example.com/api/vscode/auth/refresh': () => jsonResponse({ accessToken: 'b', refreshToken: 'r2' }),
+      });
+
+      await manager.refreshAll();
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      await session.tokenStorage.setSession({ accessToken: jwt(10 * 60 * 1000), refreshToken: 'r', authType: 'google' });
+      await manager.refreshAll();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(await session.tokenStorage.getAccessToken()).toBe('b');
     });
 
     it('recovers from offline without signing in again', async () => {

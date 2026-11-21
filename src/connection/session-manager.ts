@@ -4,6 +4,8 @@ import { ServerSession } from './server-session.js';
 import { TokenStorage } from '../auth/token-storage.js';
 
 const DEFAULT_REFRESH_INTERVAL_MS = 15 * 60 * 1000;
+/** Refresh a token on a timer tick if it would otherwise expire before the next tick, plus this margin. */
+const REFRESH_MARGIN_MS = 5 * 60 * 1000;
 
 /**
  * Keeps one ServerSession per configured server, creating and disposing them
@@ -15,6 +17,7 @@ export class SessionManager {
   private readonly disposables: vscode.Disposable[] = [];
   private timer: ReturnType<typeof setInterval> | undefined;
   private refreshing = false;
+  private refreshIntervalMs = DEFAULT_REFRESH_INTERVAL_MS;
 
   private readonly _onDidChange = new vscode.EventEmitter<ServerSession | undefined>();
   /** Fires with a session when its state changes, or undefined when sessions are added or removed. */
@@ -59,6 +62,7 @@ export class SessionManager {
 
   startRefreshTimer(intervalMs = DEFAULT_REFRESH_INTERVAL_MS): void {
     this.stopRefreshTimer();
+    this.refreshIntervalMs = intervalMs;
     this.timer = setInterval(() => { void this.refreshAll(); }, intervalMs);
   }
 
@@ -69,14 +73,18 @@ export class SessionManager {
     }
   }
 
-  /** Refresh each signed-in session's token independently; one failure never stops the others. */
+  /**
+   * Refresh each signed-in session's token that would expire before the next
+   * tick. Sessions refresh independently; one failure never stops the others.
+   */
   async refreshAll(): Promise<void> {
     if (this.refreshing) {
       return;
     }
     this.refreshing = true;
     try {
-      await Promise.allSettled(this.all().map((s) => s.refreshToken()));
+      const within = this.refreshIntervalMs + REFRESH_MARGIN_MS;
+      await Promise.allSettled(this.all().map((s) => s.refreshToken(within)));
     } finally {
       this.refreshing = false;
     }
