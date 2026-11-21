@@ -8,6 +8,8 @@ All notable changes to **Aiqbee MCP Brains** will be documented in this file.
 
 - An older Hive Server that refuses to renew sign-ins (it answers the renewal with 403) no longer signs you out after about 15 minutes. The server shows an error explaining it may need updating, and reconnects without a new sign-in once it is.
 - Sign-ins are renewed only when the access token is close to expiring, instead of every 15 minutes.
+- Creating a brain on a Hive Server that refuses it now says why: the server's own reason, or that the Hive Server may need updating to support creating brains from VS Code.
+- `Aiqbee: Create Brain…` offers every signed-in server, including one that is offline or failing, instead of hiding it (and, with one server left, silently creating the brain on another). With no server signed in it offers to sign in.
 
 ## [0.3.0] - 2026-11-21
 

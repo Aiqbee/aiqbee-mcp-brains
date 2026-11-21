@@ -104,6 +104,53 @@ describe('brain commands', () => {
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('3 of 3 brains used'));
       expect(warn.mock.calls[0][0]).toContain('Hive Server licence');
     });
+
+    async function createExpectingError(postResponse: Response): Promise<string> {
+      fetchMock.mockImplementation(async (_url: string, init?: RequestInit) =>
+        init?.method === 'POST' ? postResponse : jsonResponse([]));
+      vi.spyOn(vscode.window, 'showInputBox').mockResolvedValueOnce('New').mockResolvedValueOnce('');
+      vi.spyOn(vscode.window, 'showQuickPick').mockImplementation(async (items: any) => items[items.length - 1]);
+      const error = vi.spyOn(vscode.window, 'showErrorMessage').mockResolvedValue(undefined);
+      await createBrain(deps, 'hive-1');
+      expect(error).toHaveBeenCalledTimes(1);
+      return error.mock.calls[0][0] as string;
+    }
+
+    it('explains a Hive Server that refuses the create outright (CSRF 403 page)', async () => {
+      const message = await createExpectingError(new Response('<h1>403 Forbidden</h1>', {
+        status: 403, statusText: 'Forbidden', headers: { 'content-type': 'text/html' },
+      }));
+      expect(message).toBe('Team Hive refused to create the brain (403 Forbidden). '
+        + 'This Hive Server may need updating to support creating brains from VS Code.');
+    });
+
+    it("shows a Hive Server's own reason for a 403", async () => {
+      const message = await createExpectingError(jsonResponse({ detail: 'Brain limit reached for this licence' }, 403));
+      expect(message).toBe('Team Hive refused to create the brain: Brain limit reached for this licence');
+    });
+
+    it('still offers a signed-in server that is failing, so the create explains why instead of vanishing', async () => {
+      const session = sessions.require('hive-1');
+      fetchMock.mockImplementation(async () => { throw new TypeError('fetch failed'); });
+      await session.loadBrains().catch(() => undefined);
+      expect(session.status).toBe('offline');
+      const input = vi.spyOn(vscode.window, 'showInputBox').mockResolvedValue(undefined);
+
+      await createBrain(deps, undefined);
+
+      expect(input).toHaveBeenCalledWith(expect.objectContaining({ title: 'New Brain on Team Hive (1/3)' }));
+    });
+
+    it('offers to sign in when no server is signed in', async () => {
+      await sessions.require('hive-1').signOut();
+      const warn = vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue('Sign In' as any);
+      const exec = vi.spyOn(vscode.commands, 'executeCommand').mockResolvedValue(undefined);
+
+      await createBrain(deps, undefined);
+
+      expect(warn).toHaveBeenCalledWith('Sign in to a server to create a brain.', 'Sign In');
+      expect(exec).toHaveBeenCalledWith('aiqbee.signIn');
+    });
   });
 
   describe('parseSubscriptionLimitError', () => {
