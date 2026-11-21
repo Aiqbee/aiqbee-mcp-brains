@@ -4,6 +4,13 @@ All notable changes to **Aiqbee MCP Brains** will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- An older Hive Server that refuses to renew sign-ins (it answers the renewal with 403) no longer signs you out after about 15 minutes. The server shows an error explaining it may need updating, and reconnects without a new sign-in once it is.
+- Sign-ins are renewed only when the access token is close to expiring, instead of every 15 minutes.
+
+## [0.3.0] - 2026-11-21
+
 ### Added
 
 - **Multiple servers** — sign in to Aiqbee Cloud and any number of Hive Servers at the same time. Each server keeps its own sign-in, and signing out of or losing one server never affects the others.

@@ -23,12 +23,28 @@ export class NetworkError extends Error {
 }
 
 /**
+ * The server answered a token refresh with 403 Forbidden. Unlike a rejected
+ * refresh token this does not prove the session is over (an older Hive Server
+ * refuses the extension's refresh call outright), so the session is kept.
+ */
+export class RefreshRefusedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RefreshRefusedError';
+  }
+}
+
+/**
  * Outcome of a token refresh.
  * - ok: new tokens stored
  * - rejected: the server refused the refresh token; the session is over
+ * - refused: the server forbade the refresh call (403); keep the session and report it
  * - unreachable: the server could not be reached or failed; try again later
  */
-export type RefreshResult = 'ok' | 'rejected' | 'unreachable';
+export type RefreshResult = 'ok' | 'rejected' | 'refused' | 'unreachable';
+
+export const REFRESH_REFUSED_MESSAGE =
+  'The server refused to renew your sign-in (403 Forbidden). If this is a Hive Server, it may need updating.';
 
 /** HTTP client for one server, with Bearer auth and a single de-duplicated refresh on 401. */
 export class ApiClient {
@@ -112,6 +128,9 @@ export class ApiClient {
       }
       if (result === 'unreachable') {
         throw new NetworkError(`Could not refresh the session with ${this.baseUrl}.`);
+      }
+      if (result === 'refused') {
+        throw new RefreshRefusedError(REFRESH_REFUSED_MESSAGE);
       }
       throw new ApiRequestError('Authentication expired. Please sign in again.', 401);
     }
