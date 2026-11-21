@@ -594,6 +594,15 @@ describe('AuthService', () => {
       expect(await tokenStorage.getAccessToken()).toBe('old');
     });
 
+    it('returns refused, keeping the session, when the server forbids the refresh call (403)', async () => {
+      entry = createEntry(HIVE_OVERRIDES);
+      await tokenStorage.setSession({ accessToken: 'old', refreshToken: 'r', authType: 'google' });
+      (apiClient.postPublic as any).mockRejectedValue(new ApiRequestError('Forbidden', 403));
+
+      expect(await authService.refreshToken()).toBe('refused');
+      expect(await tokenStorage.getAccessToken()).toBe('old');
+    });
+
     it('returns unreachable when the server fails (5xx)', async () => {
       await tokenStorage.setSession({ accessToken: 'old', refreshToken: 'r', authType: 'email' });
       (apiClient.postPublic as any).mockRejectedValue(new ApiRequestError('Bad Gateway', 502));

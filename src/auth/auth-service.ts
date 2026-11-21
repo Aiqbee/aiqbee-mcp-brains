@@ -158,8 +158,16 @@ function startBrokeredTokenServer(expectedState: string) {
   );
 }
 
-/** 4xx means the server refused the refresh token; 5xx means it is failing and may recover. */
+/**
+ * 403 means the server forbade the refresh call itself (an older Hive Server's
+ * CSRF check does this), which says nothing about the refresh token, so the
+ * session is kept. Any other 4xx means the refresh token was refused; 5xx
+ * means the server is failing and may recover.
+ */
 function classifyHttpFailure(status: number): RefreshResult {
+  if (status === 403) {
+    return 'refused';
+  }
   return status >= 400 && status < 500 ? 'rejected' : 'unreachable';
 }
 
@@ -328,8 +336,9 @@ export class AuthService {
 
   /**
    * Refresh the access token. Returns 'rejected' when the server refuses the
-   * refresh token (the session is over) and 'unreachable' when the server
-   * could not be reached or failed, so an outage is not mistaken for expiry.
+   * refresh token (the session is over), 'refused' when it forbids the refresh
+   * call (403), and 'unreachable' when the server could not be reached or
+   * failed, so neither an outage nor a refused call is mistaken for expiry.
    */
   async refreshToken(): Promise<RefreshResult> {
     const session = await this.tokenStorage.getSession();

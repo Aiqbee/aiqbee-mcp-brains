@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
-import { ApiClient, ApiRequestError, NetworkError } from '../api/api-client.js';
+import { ApiClient, ApiRequestError, NetworkError, REFRESH_REFUSED_MESSAGE, RefreshRefusedError } from '../api/api-client.js';
 import { AuthService } from '../auth/auth-service.js';
 import { TokenStorage } from '../auth/token-storage.js';
+import { tokenExpiresAt } from '../auth/jwt.js';
 import { BrainService } from '../api/brain-service.js';
 import { NeuronService } from '../api/neuron-service.js';
 import type { BrainWithAccessDto, EmailSignInDto, UserDto } from '../api/types.js';
@@ -200,10 +201,25 @@ export class ServerSession {
     await this.loadBrains(true).catch(() => undefined);
   }
 
-  /** Timer refresh of the access token. Never throws. */
-  async refreshToken(): Promise<void> {
-    if (!(await this.tokenStorage.hasTokens())) {
+  /**
+   * Timer refresh of the access token. Never throws.
+   *
+   * @param ifExpiringWithinMs When given, a connected session whose access
+   *   token is a JWT that stays valid for longer than this is left alone; an
+   *   expired token is still refreshed on demand by the next request's 401.
+   *   Sessions that are offline or failing always refresh, as that is how
+   *   they recover.
+   */
+  async refreshToken(ifExpiringWithinMs?: number): Promise<void> {
+    const session = await this.tokenStorage.getSession();
+    if (!session) {
       return;
+    }
+    if (ifExpiringWithinMs !== undefined && this._status === 'connected') {
+      const expiresAt = tokenExpiresAt(session.accessToken);
+      if (expiresAt !== undefined && expiresAt - Date.now() > ifExpiringWithinMs) {
+        return;
+      }
     }
     const result = await this.authService.refreshToken().catch(() => 'unreachable' as const);
     if (result === 'ok') {
@@ -213,6 +229,8 @@ export class ServerSession {
       }
     } else if (result === 'rejected') {
       await this.expire();
+    } else if (result === 'refused') {
+      this.setStatus('error', REFRESH_REFUSED_MESSAGE);
     } else {
       this.setStatus('offline', `Could not reach ${this.entry.label}.`);
     }
@@ -235,6 +253,8 @@ export class ServerSession {
         await this.expire();
       } else if (err instanceof NetworkError) {
         this.setStatus('offline', err.message);
+      } else if (err instanceof RefreshRefusedError) {
+        this.setStatus('error', err.message);
       }
       throw err;
     }
